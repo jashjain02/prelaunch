@@ -13,3 +13,4 @@ class EventRegistrationModel(Base):
     selected_sports = Column(Text, nullable=False)  # JSON stringified list
     pickleball_level = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now()) 
+    
