@@ -12,5 +12,7 @@ class EventRegistrationModel(Base):
     phone = Column(String, nullable=False)
     selected_sports = Column(Text, nullable=False)  # JSON stringified list
     pickleball_level = Column(String, nullable=True)
+    file_url = Column(String, nullable=True)
+    booking_id = Column(String(8), unique=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now()) 
     

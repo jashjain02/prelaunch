@@ -2,12 +2,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, scoped_session, sessionmaker
 import os
 
-# Heroku Postgres credentials
-HEROKU_DATABASE_URL = "postgresql://ufnm38v543cc8b:p204b52508d79872aacc0b43f9c9efe67118dc4c54d888a9059d01a7b3c05147c@c3v5n5ajfopshl.cluster-czrs8kj4isg7.us-east-1.rds.amazonaws.com:5432/dfhak67qpimir3"
-
-# Use DATABASE_URL from env if present (for Heroku), else fallback to hardcoded Heroku URI
-SQLALCHEMY_DATABASE_URL = os.environ.get("DATABASE_URL", HEROKU_DATABASE_URL)
-if SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
+# Use DATABASE_URL from env only
+SQLALCHEMY_DATABASE_URL = os.environ.get("DATABASE_URL")
+if SQLALCHEMY_DATABASE_URL and SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
     SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 # Create engine with SSL required for Heroku

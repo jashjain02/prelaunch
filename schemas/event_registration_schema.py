@@ -7,4 +7,5 @@ class EventRegistrationSchema(BaseModel):
     email: EmailStr
     phone: str
     selected_sports: List[str]
-    pickleball_level: Optional[str] = None 
+    pickleball_level: Optional[str] = None
+    file_url: Optional[str] = None 
