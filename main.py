@@ -19,6 +19,7 @@ import logging
 load_dotenv()
 from fastapi.security.api_key import APIKeyHeader
 import time
+from fastapi.openapi.utils import get_openapi
 
 # FastAPI app initialization
 app = FastAPI(title="Your API", version="1.0.0")
@@ -177,6 +178,34 @@ def create_transaction(
         return {"id": txn_obj.id, "message": "Transaction recorded"}
     except Exception as e:
         return JSONResponse(status_code=500, content={"detail": str(e)})
+
+API_KEY_NAME = "X-API-KEY"
+
+# Custom OpenAPI schema to add API key auth to Swagger UI
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    openapi_schema["components"]["securitySchemes"] = {
+        "ApiKeyAuth": {
+            "type": "apiKey",
+            "in": "header",
+            "name": API_KEY_NAME,
+        }
+    }
+    for path in openapi_schema["paths"].values():
+        for method in path.values():
+            method["security"] = [{"ApiKeyAuth": []}]
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
 
 if __name__ == "__main__":
     import uvicorn
