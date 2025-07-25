@@ -7,6 +7,7 @@ import json
 import os
 from db.database import engine, Base, get_db, DBSession
 from models import *  # Your database models
+from models.event_registration_model import EventRegistrationModel
 from schemas.event_registration_schema import EventRegistrationSchema
 from schemas.transaction_schema import TransactionSchema
 from connector.connector import event_registration_connector, transaction_connector
@@ -59,10 +60,6 @@ async def general_exception_handler(request, exc):
     )
 
 # Routes
-@app.get('/favicon.ico')
-def favicon():
-    return FileResponse(favicon_path)
-
 @app.get('/')
 def home():
     return {"message": "API is running"}
@@ -126,7 +123,7 @@ def create_event_registration(
         booking_id = generate_booking_id()
         # Ensure uniqueness
         attempts = 0
-        while db.query(models.event_registration_model.EventRegistrationModel).filter_by(booking_id=booking_id).first():
+        while db.query(EventRegistrationModel).filter_by(booking_id=booking_id).first():
             booking_id = generate_booking_id()
             attempts += 1
             if attempts > 5:
