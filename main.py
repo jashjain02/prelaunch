@@ -5,11 +5,24 @@ from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.orm import Session
 import json
 import os
+import logging
+import time
+import random
+import string
+from datetime import datetime
+from dotenv import load_dotenv
+from fastapi.security.api_key import APIKeyHeader
+from fastapi.openapi.utils import get_openapi
+
+# Database and model imports
 from db.database import engine, Base, get_db, DBSession
 from models import *  # Your database models
 from models.event_registration_model import EventRegistrationModel
 from models.user_registration_model import UserRegistrationModel
 from models.sports_model import SportsModel
+from models.jindal_registration_model import JindalRegistrationModel
+
+# Schema imports
 from schemas.event_registration_schema import EventRegistrationSchema
 from schemas.transaction_schema import TransactionSchema
 from schemas.user_registration_schema import UserRegistrationCreate, UserRegistrationResponse
@@ -19,24 +32,24 @@ from schemas.sports_schema import (
     TicketPurchaseRequest, TicketPurchaseResponse
 )
 from schemas.jindal_registration_schema import JindalRegistrationCreate, JindalRegistrationResponse, JindalRegistrationUpdate, JindalRegistrationListResponse
+
+# Connector imports
 from connector.connector import event_registration_connector, transaction_connector, user_registration_connector, sports_connector
 from connector.sports_connector import sports_connector as sports_connector_instance
 from connector.jindal_registration_connector import jindal_registration_connector
+
+# AWS imports
 import boto3
 from botocore.exceptions import NoCredentialsError
-import random
-import string
-from dotenv import load_dotenv
-import logging
-load_dotenv()
-from fastapi.security.api_key import APIKeyHeader
-import time
-from fastapi.openapi.utils import get_openapi
-from datetime import datetime
+
+# Utility imports
 from utils.timezone_utils import format_ist_datetime
 
+# Load environment variables
+load_dotenv()
+
 # FastAPI app initialization
-app = FastAPI(title="Your API", version="1.0.0")
+app = FastAPI(title="Alldays API", version="1.0.0")
 
 # CORS origins - allow specific origins for production
 origins = [
@@ -70,6 +83,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger("alldays_backend")
 
+# API Key configuration
+API_KEY = os.environ.get("API_KEY")
+if not API_KEY:
+    raise ValueError("API_KEY environment variable is required")
+
+api_key_header = APIKeyHeader(name="X-API-KEY", auto_error=False)
+
+def get_api_key(api_key: str = Security(api_key_header)):
+    if api_key != API_KEY:
+        logger.warning("Unauthorized access attempt with API key: %s", api_key)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key"
+        )
+    return api_key
+
 # Exception handlers
 @app.exception_handler(Exception)
 async def general_exception_handler(request, exc):
@@ -79,17 +108,7 @@ async def general_exception_handler(request, exc):
         content={"detail": "Internal server error"}
     )
 
-# Routes
-@app.get('/')
-def home():
-    return {"message": "API is running"}
-
-@app.options('/{full_path:path}')
-async def options_handler(full_path: str):
-    """Handle preflight CORS requests"""
-    return {"message": "OK"}
-
-# Simple in-memory rate limiter (per-process, per-IP, per-endpoint)
+# Rate limiting
 RATE_LIMIT = 5  # max requests
 RATE_PERIOD = 60  # seconds
 rate_limit_store = {}
@@ -108,6 +127,20 @@ def check_rate_limit(request: Request):
     window.append(now)
     rate_limit_store[key] = window
 
+# Routes
+@app.get('/')
+def home():
+    return {"message": "Alldays API is running"}
+
+@app.options('/{full_path:path}')
+async def options_handler(full_path: str):
+    """Handle preflight CORS requests"""
+    return {"message": "OK"}
+
+# ============================================================================
+# EVENT REGISTRATION ENDPOINTS (Preserved for existing application)
+# ============================================================================
+
 @app.post('/event-registration')
 def create_event_registration(
     request: Request,
@@ -122,6 +155,9 @@ def create_event_registration(
     file: UploadFile = File(None),
     db: Session = Depends(get_db),
 ):
+    """
+    Create event registration (preserved for existing application)
+    """
     check_rate_limit(request)
     try:
         file_url = None
@@ -144,6 +180,7 @@ def create_event_registration(
             except Exception as s3e:
                 logger.error(f"S3 upload failed: {s3e}", exc_info=True)
                 return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": "File upload failed. Please try again later or contact support."})
+        
         # Generate unique 8-character alphanumeric booking_id
         def generate_booking_id():
             return ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
@@ -156,6 +193,7 @@ def create_event_registration(
             if attempts > 5:
                 logger.error("Failed to generate unique booking ID after 5 attempts.")
                 return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": "Could not generate a unique booking ID. Please try again."})
+        
         try:
             reg_obj = event_registration_connector.create(db, {
                 'first_name': first_name.lower(),
@@ -174,17 +212,12 @@ def create_event_registration(
         except Exception as dbe:
             logger.error(f"Database error during registration: {dbe}", exc_info=True)
             return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": "Registration failed due to a server error. Please try again later."})
+        
         logger.info(f"Event registration created: id={reg_obj.id}, booking_id={booking_id}, email={email}")
         return {"id": reg_obj.id, "booking_id": booking_id, "message": "Registration successful", "file_url": file_url}
     except Exception as e:
         logger.error(f"Error in event registration: {e}", exc_info=True)
         return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": "An unexpected error occurred. Please try again later or contact support."})
-
-
-
-
-
-
 
 @app.get('/registration-counts')
 def get_registration_counts(
@@ -233,9 +266,9 @@ def get_registration_counts(
         
         # Set fixed limits for each sport
         sport_limits = {
-            "orangetheory": 50,   # Available for bookings
+            "orangetheory": 50,    # Limited capacity for Orangetheory
             "strength": 50,    # High limit for other sports
-            "breathwork": 50
+            "breathwork": 50    # High limit for other sports
         }
         
         # Calculate availability
@@ -252,12 +285,9 @@ def get_registration_counts(
             }
             logger.info(f"Sport: {sport}, Count: {count}, Limit: {limit}, Available: {is_available}, Remaining: {remaining}")
         
-
-        
         return {
             "sport_counts": sport_counts,
-            "availability": availability,
-            "limits": sport_limits
+            "availability": availability
         }
         
     except Exception as e:
@@ -267,15 +297,49 @@ def get_registration_counts(
             content={"detail": "Failed to fetch registration counts. Please try again later."}
         )
 
+@app.post('/transaction')
+def create_transaction(
+    request: TransactionSchema,
+    db: Session = Depends(get_db),
+    api_key: str = Depends(get_api_key)
+):
+    """
+    Create transaction record (admin only)
+    """
+    try:
+        txn_obj = transaction_connector.create(db, {
+            'event_registration_id': request.event_registration_id,
+            'amount': request.amount,
+            'status': request.status,
+            'razorpay_payment_id': request.razorpay_payment_id
+        })
+        return {"id": txn_obj.id, "message": "Transaction recorded"}
+    except Exception as e:
+        logger.error(f"Error creating transaction: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Failed to create transaction. Please try again later."}
+        )
 
+# ============================================================================
+# JINDAL REGISTRATION ENDPOINTS (Production Ready)
+# ============================================================================
 
-
-
-# Jindal Registration Endpoints
 @app.post('/jindal-registration', response_model=JindalRegistrationResponse)
 def create_jindal_registration(
     request: Request,
-    registration_data: JindalRegistrationCreate,
+    first_name: str = Form(...),
+    last_name: str = Form(...),
+    email: str = Form(...),
+    phone: str = Form(...),
+    jgu_student_id: str = Form(...),
+    city: str = Form(...),
+    state: str = Form(...),
+    selected_sports: str = Form(...),  # JSON string of selected sports
+    pickle_level: str = Form(None),
+    total_amount: int = Form(...),
+    agreed_to_terms: bool = Form(True),
+    file: UploadFile = File(None),
     db: Session = Depends(get_db),
 ):
     """
@@ -284,8 +348,23 @@ def create_jindal_registration(
     check_rate_limit(request)
     
     try:
+        # Validate email format
+        if not email or '@' not in email:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid email format"
+            )
+        
+        # Validate phone number (10 digits)
+        phone_digits = ''.join(filter(str.isdigit, phone))
+        if len(phone_digits) != 10:
+            raise HTTPException(
+                status_code=400,
+                detail="Phone number must be exactly 10 digits"
+            )
+        
         # Check if email already exists
-        existing_email = jindal_registration_connector.get_by_email(db, registration_data.email)
+        existing_email = jindal_registration_connector.get_by_email(db, email.lower())
         if existing_email:
             raise HTTPException(
                 status_code=400,
@@ -293,59 +372,173 @@ def create_jindal_registration(
             )
         
         # Check if JGU Student ID already exists
-        existing_jgu_id = jindal_registration_connector.get_by_jgu_id(db, registration_data.jgu_student_id)
+        existing_jgu_id = jindal_registration_connector.get_by_jgu_id(db, jgu_student_id.upper())
         if existing_jgu_id:
             raise HTTPException(
                 status_code=400,
                 detail="JGU Student ID already registered"
             )
         
+        # Handle file upload if provided
+        payment_proof_url = None
+        if file:
+            try:
+                # Validate file type
+                if not file.content_type.startswith('image/'):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Only image files are allowed for payment proof"
+                    )
+                
+                # Generate unique filename
+                file_extension = file.filename.split('.')[-1] if '.' in file.filename else 'jpg'
+                unique_filename = f"jindal_payment_{email}_{int(time.time())}.{file_extension}"
+                
+                # S3 path for Jindal payments
+                s3_key = f"alldayspayments/jindalpayments/{unique_filename}"
+                
+                # Upload to S3
+                s3_client = boto3.client(
+                    's3',
+                    aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
+                    aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY'),
+                    region_name=os.environ.get('AWS_REGION', 'us-east-1')
+                )
+                
+                # Read file content
+                file_content = file.file.read()
+                
+                # Upload to S3
+                s3_client.put_object(
+                    Bucket=os.environ.get('AWS_S3_BUCKET', 'alldayspayments'),
+                    Key=s3_key,
+                    Body=file_content,
+                    ContentType=file.content_type,
+                    ACL='public-read'
+                )
+                
+                # Generate S3 URL
+                payment_proof_url = f"https://{os.environ.get('AWS_S3_BUCKET', 'alldayspayments')}.s3.amazonaws.com/{s3_key}"
+                
+                logger.info(f"Payment proof uploaded to S3: {payment_proof_url}")
+                
+            except NoCredentialsError:
+                logger.error("AWS credentials not found")
+                raise HTTPException(
+                    status_code=500,
+                    detail="AWS credentials not configured"
+                )
+            except Exception as s3_error:
+                logger.error(f"S3 upload error: {s3_error}")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to upload payment proof"
+                )
+        
+        # Parse selected_sports if it's a JSON string
+        try:
+            if selected_sports.startswith('['):
+                selected_sports_list = json.loads(selected_sports)
+            else:
+                selected_sports_list = [selected_sports]
+        except json.JSONDecodeError:
+            selected_sports_list = [selected_sports]
+        
+        # Create registration data
+        registration_data = {
+            'first_name': first_name.strip(),
+            'last_name': last_name.strip(),
+            'email': email.lower().strip(),
+            'phone': phone_digits,
+            'jgu_student_id': jgu_student_id.upper().strip(),
+            'city': city.strip(),
+            'state': state.strip(),
+            'selected_sports': selected_sports_list,
+            'pickle_level': pickle_level.strip() if pickle_level else None,
+            'total_amount': total_amount,
+            'payment_status': 'pending',
+            'payment_proof': payment_proof_url,
+            'agreed_to_terms': agreed_to_terms
+        }
+        
         # Create registration
-        registration = jindal_registration_connector.create_registration(db, registration_data.dict())
+        registration = jindal_registration_connector.create_registration(db, registration_data)
         
-        # Format timestamps for response
-        registration.created_at = format_ist_datetime(registration.created_at)
-        registration.updated_at = format_ist_datetime(registration.updated_at)
+        logger.info(f"Jindal registration created: id={registration.id}, email={email}, jgu_id={jgu_student_id}")
         
-        return registration
+        return {
+            "id": registration.id,
+            "first_name": registration.first_name,
+            "last_name": registration.last_name,
+            "email": registration.email,
+            "phone": registration.phone,
+            "jgu_student_id": registration.jgu_student_id,
+            "city": registration.city,
+            "state": registration.state,
+            "selected_sports": json.loads(registration.selected_sports) if registration.selected_sports else [],
+            "pickle_level": registration.pickle_level,
+            "total_amount": registration.total_amount,
+            "payment_status": registration.payment_status,
+            "payment_proof": registration.payment_proof,
+            "agreed_to_terms": registration.agreed_to_terms,
+            "created_at": registration.created_at,
+            "updated_at": registration.updated_at
+        }
         
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error creating Jindal registration: {e}", exc_info=True)
-        return JSONResponse(
+        raise HTTPException(
             status_code=500,
-            content={"detail": "An unexpected error occurred. Please try again later."}
+            detail="An unexpected error occurred. Please try again later."
         )
 
 @app.get('/jindal-registrations', response_model=JindalRegistrationListResponse)
-def get_all_jindal_registrations(
+def get_jindal_registrations(
     request: Request,
     db: Session = Depends(get_db),
+    api_key: str = Depends(get_api_key)
 ):
     """
-    Get all Jindal registrations (admin endpoint)
+    Get all Jindal registrations (admin only)
     """
     check_rate_limit(request)
     
     try:
-        registrations = jindal_registration_connector.get_all(db)
+        registrations = db.query(JindalRegistrationModel).order_by(JindalRegistrationModel.created_at.desc()).all()
         
-        # Format timestamps for response
-        for registration in registrations:
-            registration.created_at = format_ist_datetime(registration.created_at)
-            registration.updated_at = format_ist_datetime(registration.updated_at)
+        registration_list = []
+        for reg in registrations:
+            registration_list.append({
+                "id": reg.id,
+                "first_name": reg.first_name,
+                "last_name": reg.last_name,
+                "email": reg.email,
+                "phone": reg.phone,
+                "jgu_student_id": reg.jgu_student_id,
+                "city": reg.city,
+                "state": reg.state,
+                "selected_sports": json.loads(reg.selected_sports) if reg.selected_sports else [],
+                "pickle_level": reg.pickle_level,
+                "total_amount": reg.total_amount,
+                "payment_status": reg.payment_status,
+                "payment_proof": reg.payment_proof,
+                "agreed_to_terms": reg.agreed_to_terms,
+                "created_at": reg.created_at,
+                "updated_at": reg.updated_at
+            })
         
         return {
-            "total_registrations": len(registrations),
-            "registrations": registrations
+            "total_registrations": len(registration_list),
+            "registrations": registration_list
         }
         
     except Exception as e:
         logger.error(f"Error fetching Jindal registrations: {e}", exc_info=True)
-        return JSONResponse(
+        raise HTTPException(
             status_code=500,
-            content={"detail": "Failed to fetch registrations. Please try again later."}
+            detail="Failed to fetch registrations. Please try again later."
         )
 
 @app.get('/jindal-registration/{registration_id}')
@@ -353,9 +546,10 @@ def get_jindal_registration(
     request: Request,
     registration_id: int,
     db: Session = Depends(get_db),
+    api_key: str = Depends(get_api_key)
 ):
     """
-    Get a specific Jindal registration by ID
+    Get specific Jindal registration (admin only)
     """
     check_rate_limit(request)
     
@@ -368,76 +562,108 @@ def get_jindal_registration(
                 detail="Registration not found"
             )
         
-        # Format timestamps
-        registration['created_at'] = format_ist_datetime(registration['created_at'])
-        registration['updated_at'] = format_ist_datetime(registration['updated_at'])
-        
         return registration
         
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error fetching Jindal registration {registration_id}: {e}", exc_info=True)
-        return JSONResponse(
+        raise HTTPException(
             status_code=500,
-            content={"detail": "An unexpected error occurred. Please try again later."}
+            detail="Failed to fetch registration. Please try again later."
         )
 
 @app.put('/jindal-registration/{registration_id}', response_model=JindalRegistrationResponse)
 def update_jindal_registration(
     request: Request,
     registration_id: int,
-    registration_data: JindalRegistrationUpdate,
+    update_data: JindalRegistrationUpdate,
     db: Session = Depends(get_db),
+    api_key: str = Depends(get_api_key)
 ):
     """
-    Update a Jindal registration
+    Update Jindal registration (admin only)
     """
     check_rate_limit(request)
     
     try:
         # Check if registration exists
-        existing_registration = jindal_registration_connector.get_by_id(db, registration_id)
-        if not existing_registration:
+        registration = db.query(JindalRegistrationModel).filter_by(id=registration_id).first()
+        if not registration:
             raise HTTPException(
                 status_code=404,
                 detail="Registration not found"
             )
         
+        # Update fields
+        update_dict = update_data.dict(exclude_unset=True)
+        
+        # Handle selected_sports conversion
+        if 'selected_sports' in update_dict and isinstance(update_dict['selected_sports'], list):
+            update_dict['selected_sports'] = json.dumps(update_dict['selected_sports'])
+        
         # Update registration
-        updated_registration = jindal_registration_connector.update(db, registration_id, registration_data.dict(exclude_unset=True))
+        for field, value in update_dict.items():
+            setattr(registration, field, value)
         
-        # Format timestamps for response
-        updated_registration.created_at = format_ist_datetime(updated_registration.created_at)
-        updated_registration.updated_at = format_ist_datetime(updated_registration.updated_at)
+        db.commit()
+        db.refresh(registration)
         
-        return updated_registration
+        logger.info(f"Updated Jindal registration {registration_id}")
+        
+        return {
+            "id": registration.id,
+            "first_name": registration.first_name,
+            "last_name": registration.last_name,
+            "email": registration.email,
+            "phone": registration.phone,
+            "jgu_student_id": registration.jgu_student_id,
+            "city": registration.city,
+            "state": registration.state,
+            "selected_sports": json.loads(registration.selected_sports) if registration.selected_sports else [],
+            "pickle_level": registration.pickle_level,
+            "total_amount": registration.total_amount,
+            "payment_status": registration.payment_status,
+            "payment_proof": registration.payment_proof,
+            "agreed_to_terms": registration.agreed_to_terms,
+            "created_at": registration.created_at,
+            "updated_at": registration.updated_at
+        }
         
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error updating Jindal registration {registration_id}: {e}", exc_info=True)
-        return JSONResponse(
+        raise HTTPException(
             status_code=500,
-            content={"detail": "An unexpected error occurred. Please try again later."}
+            detail="Failed to update registration. Please try again later."
         )
 
 @app.put('/jindal-registration/{registration_id}/payment')
-def update_payment_status(
+def update_jindal_payment_status(
     request: Request,
     registration_id: int,
     payment_status: str,
-    payment_proof: str = None,
     db: Session = Depends(get_db),
+    api_key: str = Depends(get_api_key)
 ):
     """
-    Update payment status for a Jindal registration
+    Update payment status for Jindal registration (admin only)
     """
     check_rate_limit(request)
     
     try:
+        # Validate payment status
+        valid_statuses = ["pending", "completed", "failed"]
+        if payment_status not in valid_statuses:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Payment status must be one of: {', '.join(valid_statuses)}"
+            )
+        
+        # Update payment status
         updated_registration = jindal_registration_connector.update_payment_status(
-            db, registration_id, payment_status, payment_proof
+            db, registration_id, payment_status
         )
         
         if not updated_registration:
@@ -445,6 +671,8 @@ def update_payment_status(
                 status_code=404,
                 detail="Registration not found"
             )
+        
+        logger.info(f"Updated payment status for Jindal registration {registration_id} to {payment_status}")
         
         return {
             "success": True,
@@ -457,18 +685,19 @@ def update_payment_status(
         raise
     except Exception as e:
         logger.error(f"Error updating payment status for registration {registration_id}: {e}", exc_info=True)
-        return JSONResponse(
+        raise HTTPException(
             status_code=500,
-            content={"detail": "An unexpected error occurred. Please try again later."}
+            detail="Failed to update payment status. Please try again later."
         )
 
 @app.get('/jindal-registrations-summary')
 def get_jindal_registrations_summary(
     request: Request,
     db: Session = Depends(get_db),
+    api_key: str = Depends(get_api_key)
 ):
     """
-    Get summary of all Jindal registrations (admin endpoint)
+    Get summary of Jindal registrations (admin only)
     """
     check_rate_limit(request)
     
@@ -478,9 +707,9 @@ def get_jindal_registrations_summary(
         
     except Exception as e:
         logger.error(f"Error fetching Jindal registrations summary: {e}", exc_info=True)
-        return JSONResponse(
+        raise HTTPException(
             status_code=500,
-            content={"detail": "Failed to fetch registrations summary. Please try again later."}
+            detail="Failed to fetch registrations summary. Please try again later."
         )
 
 @app.post('/jindal-registration/{registration_id}/upload-payment')
@@ -522,9 +751,9 @@ def upload_jindal_payment_proof(
         try:
             s3_client = boto3.client(
                 's3',
-                aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
-                aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
-                region_name=os.getenv('AWS_REGION', 'us-east-1')
+                aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
+                aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY'),
+                region_name=os.environ.get('AWS_REGION', 'us-east-1')
             )
             
             # Read file content
@@ -532,7 +761,7 @@ def upload_jindal_payment_proof(
             
             # Upload to S3
             s3_client.put_object(
-                Bucket=os.getenv('AWS_S3_BUCKET'),
+                Bucket=os.environ.get('AWS_S3_BUCKET', 'alldayspayments'),
                 Key=s3_key,
                 Body=file_content,
                 ContentType=file.content_type,
@@ -540,7 +769,7 @@ def upload_jindal_payment_proof(
             )
             
             # Generate S3 URL
-            s3_url = f"https://{os.getenv('AWS_S3_BUCKET')}.s3.amazonaws.com/{s3_key}"
+            s3_url = f"https://{os.environ.get('AWS_S3_BUCKET', 'alldayspayments')}.s3.amazonaws.com/{s3_key}"
             
             # Update registration with payment proof URL
             updated_registration = jindal_registration_connector.update_payment_status(
@@ -577,6 +806,53 @@ def upload_jindal_payment_proof(
         return JSONResponse(
             status_code=500,
             content={"detail": "An unexpected error occurred. Please try again later."}
+        )
+
+# ============================================================================
+# SPORTS ENDPOINTS (For future use)
+# ============================================================================
+
+@app.get('/sports', response_model=SportsListResponse)
+def get_sports(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    Get all sports with availability status
+    """
+    check_rate_limit(request)
+    
+    try:
+        all_sports = db.query(SportsModel).all()
+        available_sports = [s for s in all_sports if s.is_available]
+        sold_out_sports = [s for s in all_sports if s.is_sold_out]
+        
+        sports_list = []
+        for sport in all_sports:
+            sports_list.append({
+                "sport_key": sport.sport_key,
+                "sport_name": sport.sport_name,
+                "price": sport.price,
+                "current_count": sport.current_count,
+                "max_capacity": sport.max_capacity,
+                "remaining_tickets": sport.remaining_tickets,
+                "is_available": sport.is_available,
+                "is_sold_out": sport.is_sold_out,
+                "timing": sport.timing
+            })
+        
+        return {
+            "total_sports": len(all_sports),
+            "available_sports": len(available_sports),
+            "sold_out_sports": len(sold_out_sports),
+            "sports": sports_list
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching sports: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to fetch sports. Please try again later."
         )
 
 if __name__ == "__main__":
