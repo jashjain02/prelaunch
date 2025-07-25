@@ -67,15 +67,6 @@ def favicon():
 def home():
     return {"message": "API is running"}
 
-API_KEY = os.environ.get("API_KEY", "supersecretkey")
-api_key_header = APIKeyHeader(name="X-API-KEY", auto_error=False)
-
-def get_api_key(api_key: str = Security(api_key_header)):
-    if api_key != API_KEY:
-        logger.warning("Unauthorized access attempt with API key: %s", api_key)
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    return api_key
-
 # Simple in-memory rate limiter (per-process, per-IP, per-endpoint)
 RATE_LIMIT = 5  # max requests
 RATE_PERIOD = 60  # seconds
@@ -106,7 +97,6 @@ def create_event_registration(
     pickleball_level: str = Form(None),
     file: UploadFile = File(None),
     db: Session = Depends(get_db),
-    api_key: str = Depends(get_api_key)
 ):
     check_rate_limit(request)
     try:
@@ -166,7 +156,6 @@ def create_event_registration(
 def create_transaction(
     request: TransactionSchema,
     db: Session = Depends(get_db),
-    api_key: str = Depends(get_api_key)
 ):
     try:
         txn_obj = transaction_connector.create(db, {
@@ -178,34 +167,6 @@ def create_transaction(
         return {"id": txn_obj.id, "message": "Transaction recorded"}
     except Exception as e:
         return JSONResponse(status_code=500, content={"detail": str(e)})
-
-API_KEY_NAME = "X-API-KEY"
-
-# Custom OpenAPI schema to add API key auth to Swagger UI
-
-def custom_openapi():
-    if app.openapi_schema:
-        return app.openapi_schema
-    openapi_schema = get_openapi(
-        title=app.title,
-        version=app.version,
-        description=app.description,
-        routes=app.routes,
-    )
-    openapi_schema["components"]["securitySchemes"] = {
-        "ApiKeyAuth": {
-            "type": "apiKey",
-            "in": "header",
-            "name": API_KEY_NAME,
-        }
-    }
-    for path in openapi_schema["paths"].values():
-        for method in path.values():
-            method["security"] = [{"ApiKeyAuth": []}]
-    app.openapi_schema = openapi_schema
-    return app.openapi_schema
-
-app.openapi = custom_openapi
 
 if __name__ == "__main__":
     import uvicorn
