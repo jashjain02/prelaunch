@@ -264,12 +264,15 @@ def get_registration_counts(
         availability = {}
         for sport, count in sport_counts.items():
             limit = sport_limits.get(sport, 50)
+            remaining = max(0, limit - count)
+            is_available = count < limit
             availability[sport] = {
                 "current_count": count,
                 "limit": limit,
-                "available": count < limit,
-                "remaining": max(0, limit - count)
+                "available": is_available,
+                "remaining": remaining
             }
+            logger.info(f"Sport: {sport}, Count: {count}, Limit: {limit}, Available: {is_available}, Remaining: {remaining}")
         
 
         
