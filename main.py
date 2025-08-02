@@ -21,6 +21,7 @@ load_dotenv()
 from fastapi.security.api_key import APIKeyHeader
 import time
 from fastapi.openapi.utils import get_openapi
+from datetime import datetime
 
 # FastAPI app initialization
 app = FastAPI(title="Your API", version="1.0.0")
@@ -131,12 +132,12 @@ def create_event_registration(
                 return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": "Could not generate a unique booking ID. Please try again."})
         try:
             reg_obj = event_registration_connector.create(db, {
-                'first_name': first_name,
-                'last_name': last_name,
-                'email': email,
-                'phone': phone,
-                'selected_sports': selected_sports,
-                'pickleball_level': pickleball_level,
+                'first_name': first_name.lower(),
+                'last_name': last_name.lower(),
+                'email': email.lower(),
+                'phone': phone.lower(),
+                'selected_sports': selected_sports.lower(),
+                'pickleball_level': pickleball_level.lower(),
                 'file_url': file_url,
                 'booking_id': booking_id
             })
@@ -164,6 +165,128 @@ def create_transaction(
         return {"id": txn_obj.id, "message": "Transaction recorded"}
     except Exception as e:
         return JSONResponse(status_code=500, content={"detail": str(e)})
+
+
+
+@app.get('/registrations')
+def get_all_registrations(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Get all event registrations as JSON data
+    """
+    check_rate_limit(request)
+    
+    try:
+        registrations = db.query(EventRegistrationModel).order_by(EventRegistrationModel.created_at.desc()).all()
+        
+        registration_list = []
+        for reg in registrations:
+            registration_list.append({
+                "id": reg.id,
+                "booking_id": reg.booking_id,
+                "first_name": reg.first_name.title(),
+                "last_name": reg.last_name.title(),
+                "email": reg.email,
+                "phone": reg.phone,
+                "selected_sports": reg.selected_sports,
+                "pickleball_level": reg.pickleball_level.title() if reg.pickleball_level else None,
+                "file_url": reg.file_url,
+                "created_at": reg.created_at.strftime("%Y-%m-%d %H:%M:%S") if reg.created_at else None
+            })
+        
+        return {
+            "total_count": len(registration_list),
+            "registrations": registration_list
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching registrations: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500, 
+            content={"detail": "Failed to fetch registrations. Please try again later."}
+        )
+
+@app.get('/registration-counts')
+def get_registration_counts(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Get registration counts for each sport to determine availability
+    """
+    check_rate_limit(request)
+    
+    try:
+        registrations = db.query(EventRegistrationModel).all()
+        
+        # Count registrations for each sport
+        sport_counts = {
+            "pickleball": 0,
+            "strength": 0,
+            "breathwork": 0
+        }
+        
+        for reg in registrations:
+            # Parse selected_sports (it's stored as a JSON string)
+            try:
+                selected_sports = json.loads(reg.selected_sports)
+                if isinstance(selected_sports, list):
+                    for sport in selected_sports:
+                        if sport in sport_counts:
+                            sport_counts[sport] += 1
+                elif isinstance(selected_sports, str):
+                    # Handle case where it might be a comma-separated string
+                    sports_list = [s.strip().lower() for s in selected_sports.split(',')]
+                    for sport in sports_list:
+                        if sport in sport_counts:
+                            sport_counts[sport] += 1
+            except (json.JSONDecodeError, AttributeError):
+                # If parsing fails, try to check if it contains the sport name
+                if reg.selected_sports:
+                    selected_sports_lower = reg.selected_sports.lower()
+                    if "pickleball" in selected_sports_lower:
+                        sport_counts["pickleball"] += 1
+                    if "strength" in selected_sports_lower:
+                        sport_counts["strength"] += 1
+                    if "breathwork" in selected_sports_lower:
+                        sport_counts["breathwork"] += 1
+        
+        # Set fixed limits for each sport
+        sport_limits = {
+            "pickleball": 42,  # Fixed limit of 42 for pickle ball
+            "strength": 50,    # High limit for other sports
+            "breathwork": 50
+        }
+        
+        # Calculate availability
+        availability = {}
+        for sport, count in sport_counts.items():
+            limit = sport_limits.get(sport, 50)
+            availability[sport] = {
+                "current_count": count,
+                "limit": limit,
+                "available": count < limit,
+                "remaining": max(0, limit - count)
+            }
+        
+
+        
+        return {
+            "sport_counts": sport_counts,
+            "availability": availability,
+            "limits": sport_limits
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching registration counts: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500, 
+            content={"detail": "Failed to fetch registration counts. Please try again later."}
+        )
+
+
 
 if __name__ == "__main__":
     import uvicorn
