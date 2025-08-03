@@ -255,7 +255,7 @@ def get_registration_counts(
         
         # Set fixed limits for each sport
         sport_limits = {
-            "pickleball": 42,  # Fixed limit of 42 for pickle ball
+            "pickleball": 37,  # Fixed limit of 37 for pickle ball
             "strength": 50,    # High limit for other sports
             "breathwork": 50
         }
