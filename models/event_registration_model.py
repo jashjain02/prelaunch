@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, String, DateTime, Text
 from sqlalchemy.sql import func
-from db.database import Base
+from db.database import Base, IST_TIMEZONE
+from datetime import datetime
 
 class EventRegistrationModel(Base):
     __tablename__ = "event_registrations"
@@ -14,5 +15,5 @@ class EventRegistrationModel(Base):
     pickleball_level = Column(String, nullable=True)
     file_url = Column(String, nullable=True)
     booking_id = Column(String(8), unique=True, nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now()) 
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(IST_TIMEZONE)) 
     

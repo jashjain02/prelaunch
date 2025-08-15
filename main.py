@@ -8,9 +8,20 @@ import os
 from db.database import engine, Base, get_db, DBSession
 from models import *  # Your database models
 from models.event_registration_model import EventRegistrationModel
+from models.user_registration_model import UserRegistrationModel
+from models.sports_model import SportsModel
 from schemas.event_registration_schema import EventRegistrationSchema
 from schemas.transaction_schema import TransactionSchema
-from connector.connector import event_registration_connector, transaction_connector
+from schemas.user_registration_schema import UserRegistrationCreate, UserRegistrationResponse
+from schemas.sports_schema import (
+    SportsCreate, SportsResponse, SportsUpdate, 
+    SportsAvailabilityResponse, SportsListResponse,
+    TicketPurchaseRequest, TicketPurchaseResponse
+)
+from schemas.jindal_registration_schema import JindalRegistrationCreate, JindalRegistrationResponse, JindalRegistrationUpdate, JindalRegistrationListResponse
+from connector.connector import event_registration_connector, transaction_connector, user_registration_connector, sports_connector
+from connector.sports_connector import sports_connector as sports_connector_instance
+from connector.jindal_registration_connector import jindal_registration_connector
 import boto3
 from botocore.exceptions import NoCredentialsError
 import random
@@ -22,6 +33,7 @@ from fastapi.security.api_key import APIKeyHeader
 import time
 from fastapi.openapi.utils import get_openapi
 from datetime import datetime
+from utils.timezone_utils import format_ist_datetime
 
 # FastAPI app initialization
 app = FastAPI(title="Your API", version="1.0.0")
@@ -193,7 +205,7 @@ def get_all_registrations(
                 "selected_sports": reg.selected_sports,
                 "pickleball_level": reg.pickleball_level.title() if reg.pickleball_level else None,
                 "file_url": reg.file_url,
-                "created_at": reg.created_at.strftime("%Y-%m-%d %H:%M:%S") if reg.created_at else None
+                "created_at": format_ist_datetime(reg.created_at)
             })
         
         return {
@@ -255,7 +267,7 @@ def get_registration_counts(
         
         # Set fixed limits for each sport
         sport_limits = {
-            "pickleball": 37,  # Fixed limit of 37 for pickle ball
+            "pickleball": 0,   # Sold out - no more bookings allowed
             "strength": 50,    # High limit for other sports
             "breathwork": 50
         }
@@ -289,7 +301,669 @@ def get_registration_counts(
             content={"detail": "Failed to fetch registration counts. Please try again later."}
         )
 
+@app.post('/user-registration', response_model=UserRegistrationResponse)
+def create_user_registration(
+    request: Request,
+    user_data: UserRegistrationCreate,
+    db: Session = Depends(get_db),
+):
+    """
+    Create a new user registration with form validation
+    """
+    check_rate_limit(request)
+    
+    try:
+        # Check if email already exists
+        existing_user = db.query(UserRegistrationModel).filter_by(email=user_data.email.lower()).first()
+        if existing_user:
+            raise HTTPException(
+                status_code=400,
+                detail="Email already registered"
+            )
+        
+        # Create new user registration
+        user_obj = user_registration_connector.create(db, {
+            'first_name': user_data.first_name.lower(),
+            'last_name': user_data.last_name.lower(),
+            'email': user_data.email.lower(),
+            'phone': user_data.phone,
+            'jgu_student_id': user_data.jgu_student_id,
+            'city': user_data.city.lower(),
+            'state': user_data.state,
+            'agreed_to_terms': user_data.agreed_to_terms
+        })
+        
+        logger.info(f"User registration created: id={user_obj.id}, email={user_data.email}")
+        return user_obj
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in user registration: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "An unexpected error occurred. Please try again later or contact support."}
+        )
 
+@app.get('/user-registrations')
+def get_all_user_registrations(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Get all user registrations as JSON data (admin endpoint)
+    """
+    check_rate_limit(request)
+    
+    try:
+        users = db.query(UserRegistrationModel).order_by(UserRegistrationModel.created_at.desc()).all()
+        
+        user_list = []
+        for user in users:
+            user_list.append({
+                "id": user.id,
+                "first_name": user.first_name.title(),
+                "last_name": user.last_name.title(),
+                "email": user.email,
+                "phone": user.phone,
+                "jgu_student_id": user.jgu_student_id,
+                "city": user.city.title(),
+                "state": user.state,
+                "agreed_to_terms": user.agreed_to_terms,
+                "created_at": format_ist_datetime(user.created_at),
+                "updated_at": format_ist_datetime(user.updated_at)
+            })
+        
+        return {
+            "total_count": len(user_list),
+            "users": user_list
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching user registrations: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500, 
+            content={"detail": "Failed to fetch user registrations. Please try again later."}
+        )
+
+# Sports Management Endpoints
+@app.post('/sports', response_model=SportsResponse)
+def create_sport(
+    request: Request,
+    sport_data: SportsCreate,
+    db: Session = Depends(get_db),
+):
+    """
+    Create a new sport (admin endpoint)
+    """
+    check_rate_limit(request)
+    
+    try:
+        # Check if sport_key already exists
+        existing_sport = db.query(SportsModel).filter_by(sport_key=sport_data.sport_key).first()
+        if existing_sport:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Sport with key '{sport_data.sport_key}' already exists"
+            )
+        
+        sport_obj = sports_connector.create(db, {
+            'sport_name': sport_data.sport_name,
+            'sport_key': sport_data.sport_key,
+            'description': sport_data.description,
+            'price': sport_data.price,
+            'max_capacity': sport_data.max_capacity,
+            'timing': sport_data.timing,
+            'is_active': sport_data.is_active
+        })
+        
+        logger.info(f"Sport created: {sport_obj.sport_name} with capacity {sport_obj.max_capacity}")
+        return sport_obj
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating sport: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "An unexpected error occurred. Please try again later."}
+        )
+
+@app.get('/sports', response_model=SportsListResponse)
+def get_all_sports(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Get all sports with availability status
+    """
+    check_rate_limit(request)
+    
+    try:
+        sports = db.query(SportsModel).order_by(SportsModel.sport_name).all()
+        
+        sports_list = []
+        for sport in sports:
+            sports_list.append({
+                "sport_key": sport.sport_key,
+                "sport_name": sport.sport_name,
+                "description": sport.description,
+                "price": sport.price,
+                "current_count": sport.current_count,
+                "max_capacity": sport.max_capacity,
+                "remaining_tickets": sport.remaining_tickets,
+                "is_available": sport.is_available,
+                "is_sold_out": sport.is_sold_out,
+                "timing": sport.timing
+            })
+        
+        available_count = len([s for s in sports if s.is_available])
+        sold_out_count = len([s for s in sports if s.is_sold_out])
+        
+        return {
+            "total_sports": len(sports_list),
+            "available_sports": available_count,
+            "sold_out_sports": sold_out_count,
+            "sports": sports_list
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching sports: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500, 
+            content={"detail": "Failed to fetch sports. Please try again later."}
+        )
+
+@app.get('/sports/{sport_key}', response_model=SportsAvailabilityResponse)
+def get_sport_by_key(
+    request: Request,
+    sport_key: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Get specific sport by sport_key
+    """
+    check_rate_limit(request)
+    
+    try:
+        sport = sports_connector_instance.get_by_sport_key(db, sport_key)
+        if not sport:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Sport '{sport_key}' not found"
+            )
+        
+        return {
+            "sport_key": sport.sport_key,
+            "sport_name": sport.sport_name,
+            "description": sport.description,
+            "price": sport.price,
+            "current_count": sport.current_count,
+            "max_capacity": sport.max_capacity,
+            "remaining_tickets": sport.remaining_tickets,
+            "is_available": sport.is_available,
+            "is_sold_out": sport.is_sold_out,
+            "timing": sport.timing
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching sport {sport_key}: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500, 
+            content={"detail": "Failed to fetch sport. Please try again later."}
+        )
+
+@app.post('/sports/{sport_key}/purchase', response_model=TicketPurchaseResponse)
+def purchase_tickets(
+    request: Request,
+    sport_key: str,
+    purchase_data: TicketPurchaseRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Purchase tickets for a specific sport
+    """
+    check_rate_limit(request)
+    
+    try:
+        success, message, sport = sports_connector_instance.purchase_tickets(
+            db, sport_key, purchase_data.quantity
+        )
+        
+        if not success:
+            raise HTTPException(
+                status_code=400,
+                detail=message
+            )
+        
+        return {
+            "success": True,
+            "sport_key": sport.sport_key,
+            "sport_name": sport.sport_name,
+            "quantity": purchase_data.quantity,
+            "total_price": sport.price * purchase_data.quantity,
+            "remaining_tickets": sport.remaining_tickets,
+            "is_sold_out": sport.is_sold_out,
+            "message": message
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error purchasing tickets for {sport_key}: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "An unexpected error occurred. Please try again later."}
+        )
+
+@app.post('/sports/{sport_key}/refund')
+def refund_tickets(
+    request: Request,
+    sport_key: str,
+    quantity: int = 1,
+    db: Session = Depends(get_db),
+):
+    """
+    Refund tickets for a specific sport (admin endpoint)
+    """
+    check_rate_limit(request)
+    
+    try:
+        success, message, sport = sports_connector_instance.refund_tickets(db, sport_key, quantity)
+        
+        if not success:
+            raise HTTPException(
+                status_code=400,
+                detail=message
+            )
+        
+        return {
+            "success": True,
+            "message": message,
+            "sport_key": sport.sport_key,
+            "sport_name": sport.sport_name,
+            "refunded_quantity": quantity,
+            "remaining_tickets": sport.remaining_tickets,
+            "is_sold_out": sport.is_sold_out
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error refunding tickets for {sport_key}: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "An unexpected error occurred. Please try again later."}
+        )
+
+@app.post('/sports/{sport_key}/reset')
+def reset_sport_count(
+    request: Request,
+    sport_key: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Reset ticket count for a sport (admin endpoint)
+    """
+    check_rate_limit(request)
+    
+    try:
+        success, message, sport = sports_connector_instance.reset_sport_count(db, sport_key)
+        
+        if not success:
+            raise HTTPException(
+                status_code=400,
+                detail=message
+            )
+        
+        return {
+            "success": True,
+            "message": message,
+            "sport_key": sport.sport_key,
+            "sport_name": sport.sport_name,
+            "current_count": sport.current_count,
+            "is_sold_out": sport.is_sold_out
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error resetting sport count for {sport_key}: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "An unexpected error occurred. Please try again later."}
+        )
+
+@app.get('/sports-summary')
+def get_sports_summary(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Get summary of all sports (admin endpoint)
+    """
+    check_rate_limit(request)
+    
+    try:
+        summary = sports_connector_instance.get_sports_summary(db)
+        return summary
+        
+    except Exception as e:
+        logger.error(f"Error fetching sports summary: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500, 
+            content={"detail": "Failed to fetch sports summary. Please try again later."}
+        )
+
+# Jindal Registration Endpoints
+@app.post('/jindal-registration', response_model=JindalRegistrationResponse)
+def create_jindal_registration(
+    request: Request,
+    registration_data: JindalRegistrationCreate,
+    db: Session = Depends(get_db),
+):
+    """
+    Create a new Jindal registration
+    """
+    check_rate_limit(request)
+    
+    try:
+        # Check if email already exists
+        existing_email = jindal_registration_connector.get_by_email(db, registration_data.email)
+        if existing_email:
+            raise HTTPException(
+                status_code=400,
+                detail="Email already registered"
+            )
+        
+        # Check if JGU Student ID already exists
+        existing_jgu_id = jindal_registration_connector.get_by_jgu_id(db, registration_data.jgu_student_id)
+        if existing_jgu_id:
+            raise HTTPException(
+                status_code=400,
+                detail="JGU Student ID already registered"
+            )
+        
+        # Create registration
+        registration = jindal_registration_connector.create_registration(db, registration_data.dict())
+        
+        # Format timestamps for response
+        registration.created_at = format_ist_datetime(registration.created_at)
+        registration.updated_at = format_ist_datetime(registration.updated_at)
+        
+        return registration
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating Jindal registration: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "An unexpected error occurred. Please try again later."}
+        )
+
+@app.get('/jindal-registrations', response_model=JindalRegistrationListResponse)
+def get_all_jindal_registrations(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Get all Jindal registrations (admin endpoint)
+    """
+    check_rate_limit(request)
+    
+    try:
+        registrations = jindal_registration_connector.get_all(db)
+        
+        # Format timestamps for response
+        for registration in registrations:
+            registration.created_at = format_ist_datetime(registration.created_at)
+            registration.updated_at = format_ist_datetime(registration.updated_at)
+        
+        return {
+            "total_registrations": len(registrations),
+            "registrations": registrations
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching Jindal registrations: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Failed to fetch registrations. Please try again later."}
+        )
+
+@app.get('/jindal-registration/{registration_id}')
+def get_jindal_registration(
+    request: Request,
+    registration_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    Get a specific Jindal registration by ID
+    """
+    check_rate_limit(request)
+    
+    try:
+        registration = jindal_registration_connector.get_registration_with_sports(db, registration_id)
+        
+        if not registration:
+            raise HTTPException(
+                status_code=404,
+                detail="Registration not found"
+            )
+        
+        # Format timestamps
+        registration['created_at'] = format_ist_datetime(registration['created_at'])
+        registration['updated_at'] = format_ist_datetime(registration['updated_at'])
+        
+        return registration
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching Jindal registration {registration_id}: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "An unexpected error occurred. Please try again later."}
+        )
+
+@app.put('/jindal-registration/{registration_id}', response_model=JindalRegistrationResponse)
+def update_jindal_registration(
+    request: Request,
+    registration_id: int,
+    registration_data: JindalRegistrationUpdate,
+    db: Session = Depends(get_db),
+):
+    """
+    Update a Jindal registration
+    """
+    check_rate_limit(request)
+    
+    try:
+        # Check if registration exists
+        existing_registration = jindal_registration_connector.get_by_id(db, registration_id)
+        if not existing_registration:
+            raise HTTPException(
+                status_code=404,
+                detail="Registration not found"
+            )
+        
+        # Update registration
+        updated_registration = jindal_registration_connector.update(db, registration_id, registration_data.dict(exclude_unset=True))
+        
+        # Format timestamps for response
+        updated_registration.created_at = format_ist_datetime(updated_registration.created_at)
+        updated_registration.updated_at = format_ist_datetime(updated_registration.updated_at)
+        
+        return updated_registration
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating Jindal registration {registration_id}: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "An unexpected error occurred. Please try again later."}
+        )
+
+@app.put('/jindal-registration/{registration_id}/payment')
+def update_payment_status(
+    request: Request,
+    registration_id: int,
+    payment_status: str,
+    payment_proof: str = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Update payment status for a Jindal registration
+    """
+    check_rate_limit(request)
+    
+    try:
+        updated_registration = jindal_registration_connector.update_payment_status(
+            db, registration_id, payment_status, payment_proof
+        )
+        
+        if not updated_registration:
+            raise HTTPException(
+                status_code=404,
+                detail="Registration not found"
+            )
+        
+        return {
+            "success": True,
+            "message": f"Payment status updated to {payment_status}",
+            "registration_id": registration_id,
+            "payment_status": payment_status
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating payment status for registration {registration_id}: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "An unexpected error occurred. Please try again later."}
+        )
+
+@app.get('/jindal-registrations-summary')
+def get_jindal_registrations_summary(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Get summary of all Jindal registrations (admin endpoint)
+    """
+    check_rate_limit(request)
+    
+    try:
+        summary = jindal_registration_connector.get_registrations_summary(db)
+        return summary
+        
+    except Exception as e:
+        logger.error(f"Error fetching Jindal registrations summary: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Failed to fetch registrations summary. Please try again later."}
+        )
+
+@app.post('/jindal-registration/{registration_id}/upload-payment')
+def upload_jindal_payment_proof(
+    request: Request,
+    registration_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """
+    Upload payment proof for a Jindal registration
+    """
+    check_rate_limit(request)
+    
+    try:
+        # Check if registration exists
+        registration = jindal_registration_connector.get_by_id(db, registration_id)
+        if not registration:
+            raise HTTPException(
+                status_code=404,
+                detail="Registration not found"
+            )
+        
+        # Validate file type
+        if not file.content_type.startswith('image/'):
+            raise HTTPException(
+                status_code=400,
+                detail="Only image files are allowed"
+            )
+        
+        # Generate unique filename
+        file_extension = file.filename.split('.')[-1] if '.' in file.filename else 'jpg'
+        unique_filename = f"jindal_payment_{registration_id}_{int(time.time())}.{file_extension}"
+        
+        # S3 path for Jindal payments
+        s3_key = f"alldayspayments/jindalpayments/{unique_filename}"
+        
+        # Upload to S3
+        try:
+            s3_client = boto3.client(
+                's3',
+                aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+                aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+                region_name=os.getenv('AWS_REGION', 'us-east-1')
+            )
+            
+            # Read file content
+            file_content = file.file.read()
+            
+            # Upload to S3
+            s3_client.put_object(
+                Bucket=os.getenv('AWS_S3_BUCKET'),
+                Key=s3_key,
+                Body=file_content,
+                ContentType=file.content_type,
+                ACL='public-read'
+            )
+            
+            # Generate S3 URL
+            s3_url = f"https://{os.getenv('AWS_S3_BUCKET')}.s3.amazonaws.com/{s3_key}"
+            
+            # Update registration with payment proof URL
+            updated_registration = jindal_registration_connector.update_payment_status(
+                db, registration_id, "pending", s3_url
+            )
+            
+            logger.info(f"Uploaded payment proof for Jindal registration {registration_id} to S3: {s3_url}")
+            
+            return {
+                "success": True,
+                "message": "Payment proof uploaded successfully",
+                "registration_id": registration_id,
+                "payment_proof_url": s3_url,
+                "s3_key": s3_key
+            }
+            
+        except NoCredentialsError:
+            logger.error("AWS credentials not found")
+            return JSONResponse(
+                status_code=500,
+                content={"detail": "AWS credentials not configured"}
+            )
+        except Exception as s3_error:
+            logger.error(f"S3 upload error: {s3_error}")
+            return JSONResponse(
+                status_code=500,
+                content={"detail": "Failed to upload file to S3"}
+            )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error uploading payment proof for registration {registration_id}: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "An unexpected error occurred. Please try again later."}
+        )
 
 if __name__ == "__main__":
     import uvicorn
