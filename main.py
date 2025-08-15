@@ -120,7 +120,7 @@ def create_event_registration(
                 )
                 bucket_name = os.environ.get('S3_BUCKET_NAME', 'alldayspayments')
                 file_ext = file.filename.split('.')[-1]
-                s3_key = f"event_files/{email}_{first_name}_{last_name}.{file_ext}"
+                s3_key = f"jindalpayments/{email}_{first_name}_{last_name}.{file_ext}"
                 s3.upload_fileobj(file.file, bucket_name, s3_key)
                 file_url = f"https://{bucket_name}.s3.amazonaws.com/{s3_key}"
                 logger.info(f"File uploaded to S3: {file_url}")
