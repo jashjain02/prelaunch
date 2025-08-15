@@ -38,7 +38,7 @@ from utils.timezone_utils import format_ist_datetime
 # FastAPI app initialization
 app = FastAPI(title="Your API", version="1.0.0")
 
-# CORS origins
+# CORS origins - allow all origins for development
 origins = ["*"]
 
 # Create database tables
@@ -51,6 +51,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Favicon path
@@ -76,6 +77,11 @@ async def general_exception_handler(request, exc):
 @app.get('/')
 def home():
     return {"message": "API is running"}
+
+@app.options('/{full_path:path}')
+async def options_handler(full_path: str):
+    """Handle preflight CORS requests"""
+    return {"message": "OK"}
 
 # Simple in-memory rate limiter (per-process, per-IP, per-endpoint)
 RATE_LIMIT = 5  # max requests
