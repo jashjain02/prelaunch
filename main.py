@@ -110,7 +110,9 @@ def create_event_registration(
     email: str = Form(...),
     phone: str = Form(...),
     selected_sports: str = Form(...),
-    pickleball_level: str = Form(None),
+    orangetheory_batch: str = Form(None),
+    event_date: str = Form("24th August 2025"),
+    event_location: str = Form("Orangetheory Fitness, Worli"),
     file: UploadFile = File(None),
     db: Session = Depends(get_db),
 ):
@@ -155,9 +157,13 @@ def create_event_registration(
                 'email': email.lower(),
                 'phone': phone.lower(),
                 'selected_sports': selected_sports.lower(),
-                'pickleball_level': pickleball_level.lower(),
+                'orangetheory_batch': orangetheory_batch.lower() if orangetheory_batch else None,
+                'event_date': event_date,
+                'event_location': event_location,
+                'payment_status': 'pending',
                 'file_url': file_url,
-                'booking_id': booking_id
+                'booking_id': booking_id,
+                'is_active': True
             })
         except Exception as dbe:
             logger.error(f"Database error during registration: {dbe}", exc_info=True)
@@ -209,9 +215,14 @@ def get_all_registrations(
                 "email": reg.email,
                 "phone": reg.phone,
                 "selected_sports": reg.selected_sports,
-                "pickleball_level": reg.pickleball_level.title() if reg.pickleball_level else None,
+                "orangetheory_batch": reg.orangetheory_batch.title() if reg.orangetheory_batch else None,
+                "event_date": reg.event_date,
+                "event_location": reg.event_location,
+                "payment_status": reg.payment_status,
                 "file_url": reg.file_url,
-                "created_at": format_ist_datetime(reg.created_at)
+                "is_active": reg.is_active,
+                "created_at": format_ist_datetime(reg.created_at),
+                "updated_at": format_ist_datetime(reg.updated_at) if reg.updated_at else None
             })
         
         return {
@@ -241,7 +252,7 @@ def get_registration_counts(
         
         # Count registrations for each sport
         sport_counts = {
-            "pickleball": 0,
+            "orangetheory": 0,
             "strength": 0,
             "breathwork": 0
         }
@@ -264,8 +275,8 @@ def get_registration_counts(
                 # If parsing fails, try to check if it contains the sport name
                 if reg.selected_sports:
                     selected_sports_lower = reg.selected_sports.lower()
-                    if "pickleball" in selected_sports_lower:
-                        sport_counts["pickleball"] += 1
+                    if "orangetheory" in selected_sports_lower:
+                        sport_counts["orangetheory"] += 1
                     if "strength" in selected_sports_lower:
                         sport_counts["strength"] += 1
                     if "breathwork" in selected_sports_lower:
@@ -273,7 +284,7 @@ def get_registration_counts(
         
         # Set fixed limits for each sport
         sport_limits = {
-            "pickleball": 0,   # Sold out - no more bookings allowed
+            "orangetheory": 50,   # Available for bookings
             "strength": 50,    # High limit for other sports
             "breathwork": 50
         }

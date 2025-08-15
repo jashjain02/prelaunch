@@ -1,5 +1,6 @@
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional
+from datetime import datetime
 
 class EventRegistrationSchema(BaseModel):
     first_name: str
@@ -7,5 +8,26 @@ class EventRegistrationSchema(BaseModel):
     email: EmailStr
     phone: str
     selected_sports: List[str]
-    pickleball_level: Optional[str] = None
-    file_url: Optional[str] = None 
+    orangetheory_batch: Optional[str] = None
+    event_date: Optional[str] = None
+    event_location: Optional[str] = None
+    payment_status: Optional[str] = "pending"
+    file_url: Optional[str] = None
+    is_active: Optional[bool] = True
+
+class EventRegistrationResponse(BaseModel):
+    id: int
+    first_name: str
+    last_name: str
+    email: str
+    phone: str
+    selected_sports: str
+    orangetheory_batch: Optional[str] = None
+    event_date: Optional[str] = None
+    event_location: Optional[str] = None
+    payment_status: str
+    file_url: Optional[str] = None
+    booking_id: str
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime 

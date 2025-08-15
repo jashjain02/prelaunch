@@ -1,7 +1,6 @@
-from sqlalchemy import Column, Integer, String, DateTime, Text
+from sqlalchemy import Column, Integer, String, DateTime, Text, Boolean
 from sqlalchemy.sql import func
-from db.database import Base, IST_TIMEZONE
-from datetime import datetime
+from db.database import Base
 
 class EventRegistrationModel(Base):
     __tablename__ = "event_registrations"
@@ -12,8 +11,14 @@ class EventRegistrationModel(Base):
     email = Column(String, index=True, nullable=False)
     phone = Column(String, nullable=False)
     selected_sports = Column(Text, nullable=False)  # JSON stringified list
-    pickleball_level = Column(String, nullable=True)
+    orangetheory_batch = Column(String, nullable=True)  # "batch1" or "batch2"
+    event_date = Column(String, nullable=True)  # "24th August 2025"
+    event_location = Column(String, nullable=True)  # "Orangetheory Fitness, Worli"
+    payment_status = Column(String, default="pending")  # "pending", "completed", "failed"
     file_url = Column(String, nullable=True)
     booking_id = Column(String(8), unique=True, nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), default=lambda: datetime.now(IST_TIMEZONE)) 
+    is_active = Column(Boolean, default=True)  # For soft deletes
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
     
