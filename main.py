@@ -13,6 +13,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.openapi.utils import get_openapi
+import re
 
 # Database and model imports
 from db.database import engine, Base, get_db, DBSession
@@ -343,43 +344,37 @@ def create_jindal_registration(
     db: Session = Depends(get_db),
 ):
     """
-    Create a new Jindal registration
+    Create Jindal registration with file upload (single API endpoint)
     """
     check_rate_limit(request)
     
     try:
-        # Validate email format
-        if not email or '@' not in email:
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid email format"
-            )
-        
-        # Validate phone number (10 digits)
+        # Validate phone number
         phone_digits = ''.join(filter(str.isdigit, phone))
-        if len(phone_digits) != 10:
+        if len(phone_digits) < 10:
             raise HTTPException(
-                status_code=400,
-                detail="Phone number must be exactly 10 digits"
+                status_code=422,
+                detail="Invalid phone number. Must be at least 10 digits."
             )
         
-        # Check if email already exists
-        existing_email = jindal_registration_connector.get_by_email(db, email.lower())
-        if existing_email:
+        # Validate email format
+        if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
             raise HTTPException(
-                status_code=400,
-                detail="Email already registered"
+                status_code=422,
+                detail="Invalid email format."
             )
         
-        # Check if JGU Student ID already exists
-        existing_jgu_id = jindal_registration_connector.get_by_jgu_id(db, jgu_student_id.upper())
-        if existing_jgu_id:
+        # Check if registration already exists
+        existing_registration = jindal_registration_connector.get_by_email_or_jgu_id(
+            db, email, jgu_student_id
+        )
+        if existing_registration:
             raise HTTPException(
-                status_code=400,
-                detail="JGU Student ID already registered"
+                status_code=409,
+                detail="Registration already exists with this email or JGU Student ID."
             )
         
-        # Handle file upload if provided
+        # Handle file upload if provided (following event registration pattern)
         payment_proof_url = None
         if file:
             try:
@@ -390,49 +385,30 @@ def create_jindal_registration(
                         detail="Only image files are allowed for payment proof"
                     )
                 
-                # Generate unique filename
-                file_extension = file.filename.split('.')[-1] if '.' in file.filename else 'jpg'
-                unique_filename = f"jindal_payment_{email}_{int(time.time())}.{file_extension}"
-                
-                # S3 path for Jindal payments
-                s3_key = f"alldayspayments/jindalpayments/{unique_filename}"
-                
-                # Upload to S3
-                s3_client = boto3.client(
+                # Upload to S3 (following event registration pattern)
+                s3 = boto3.client(
                     's3',
                     aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
-                    aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY'),
-                    region_name=os.environ.get('AWS_REGION', 'us-east-1')
+                    aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY')
                 )
-                
-                # Read file content
-                file_content = file.file.read()
-                
-                # Upload to S3
-                s3_client.put_object(
-                    Bucket=os.environ.get('AWS_S3_BUCKET', 'alldayspayments'),
-                    Key=s3_key,
-                    Body=file_content,
-                    ContentType=file.content_type,
-                    ACL='public-read'
-                )
-                
-                # Generate S3 URL
-                payment_proof_url = f"https://{os.environ.get('AWS_S3_BUCKET', 'alldayspayments')}.s3.amazonaws.com/{s3_key}"
-                
+                bucket_name = os.environ.get('AWS_S3_BUCKET', 'alldayspayments')
+                file_ext = file.filename.split('.')[-1]
+                s3_key = f"jindalpayments/{email}_{first_name}_{last_name}.{file_ext}"
+                s3.upload_fileobj(file.file, bucket_name, s3_key)
+                payment_proof_url = f"https://{bucket_name}.s3.amazonaws.com/{s3_key}"
                 logger.info(f"Payment proof uploaded to S3: {payment_proof_url}")
                 
             except NoCredentialsError:
-                logger.error("AWS credentials not found")
-                raise HTTPException(
-                    status_code=500,
-                    detail="AWS credentials not configured"
+                logger.error("AWS credentials not found.")
+                return JSONResponse(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+                    content={"detail": "AWS credentials not found. Please contact support."}
                 )
-            except Exception as s3_error:
-                logger.error(f"S3 upload error: {s3_error}")
-                raise HTTPException(
-                    status_code=500,
-                    detail="Failed to upload payment proof"
+            except Exception as s3e:
+                logger.error(f"S3 upload failed: {s3e}", exc_info=True)
+                return JSONResponse(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+                    content={"detail": "File upload failed. Please try again later or contact support."}
                 )
         
         # Parse selected_sports if it's a JSON string
@@ -482,16 +458,18 @@ def create_jindal_registration(
             "payment_proof": registration.payment_proof,
             "agreed_to_terms": registration.agreed_to_terms,
             "created_at": registration.created_at,
-            "updated_at": registration.updated_at
+            "updated_at": registration.updated_at,
+            "message": "Registration successful",
+            "payment_proof_url": payment_proof_url
         }
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error creating Jindal registration: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail="An unexpected error occurred. Please try again later."
+        logger.error(f"Error in Jindal registration: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            content={"detail": "An unexpected error occurred. Please try again later or contact support."}
         )
 
 @app.get('/jindal-registrations', response_model=JindalRegistrationListResponse)
@@ -710,102 +688,6 @@ def get_jindal_registrations_summary(
         raise HTTPException(
             status_code=500,
             detail="Failed to fetch registrations summary. Please try again later."
-        )
-
-@app.post('/jindal-registration/{registration_id}/upload-payment')
-def upload_jindal_payment_proof(
-    request: Request,
-    registration_id: int,
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-):
-    """
-    Upload payment proof for a Jindal registration
-    """
-    check_rate_limit(request)
-    
-    try:
-        # Check if registration exists
-        registration = jindal_registration_connector.get_by_id(db, registration_id)
-        if not registration:
-            raise HTTPException(
-                status_code=404,
-                detail="Registration not found"
-            )
-        
-        # Validate file type
-        if not file.content_type.startswith('image/'):
-            raise HTTPException(
-                status_code=400,
-                detail="Only image files are allowed"
-            )
-        
-        # Generate unique filename
-        file_extension = file.filename.split('.')[-1] if '.' in file.filename else 'jpg'
-        unique_filename = f"jindal_payment_{registration_id}_{int(time.time())}.{file_extension}"
-        
-        # S3 path for Jindal payments
-        s3_key = f"alldayspayments/jindalpayments/{unique_filename}"
-        
-        # Upload to S3
-        try:
-            s3_client = boto3.client(
-                's3',
-                aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
-                aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY'),
-                region_name=os.environ.get('AWS_REGION', 'us-east-1')
-            )
-            
-            # Read file content
-            file_content = file.file.read()
-            
-            # Upload to S3
-            s3_client.put_object(
-                Bucket=os.environ.get('AWS_S3_BUCKET', 'alldayspayments'),
-                Key=s3_key,
-                Body=file_content,
-                ContentType=file.content_type,
-                ACL='public-read'
-            )
-            
-            # Generate S3 URL
-            s3_url = f"https://{os.environ.get('AWS_S3_BUCKET', 'alldayspayments')}.s3.amazonaws.com/{s3_key}"
-            
-            # Update registration with payment proof URL
-            updated_registration = jindal_registration_connector.update_payment_status(
-                db, registration_id, "pending", s3_url
-            )
-            
-            logger.info(f"Uploaded payment proof for Jindal registration {registration_id} to S3: {s3_url}")
-            
-            return {
-                "success": True,
-                "message": "Payment proof uploaded successfully",
-                "registration_id": registration_id,
-                "payment_proof_url": s3_url,
-                "s3_key": s3_key
-            }
-            
-        except NoCredentialsError:
-            logger.error("AWS credentials not found")
-            return JSONResponse(
-                status_code=500,
-                content={"detail": "AWS credentials not configured"}
-            )
-        except Exception as s3_error:
-            logger.error(f"S3 upload error: {s3_error}")
-            return JSONResponse(
-                status_code=500,
-                content={"detail": "Failed to upload file to S3"}
-            )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error uploading payment proof for registration {registration_id}: {e}", exc_info=True)
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "An unexpected error occurred. Please try again later."}
         )
 
 # ============================================================================
