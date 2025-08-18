@@ -1,1 +1,31 @@
+<<<<<<< HEAD
 .env
+=======
+# Virtual Environment
+alldaysenv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Database
+*.db
+*.sqlite3
+
+# Environment variables
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+>>>>>>> 1d33569 (Remove registration-counts endpoint and clean up backend)
