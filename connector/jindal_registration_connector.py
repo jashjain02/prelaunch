@@ -35,6 +35,13 @@ class JindalRegistrationConnector(CrudeOperationsModel[JindalRegistrationModel, 
         """Get registration by JGU Student ID"""
         return db.query(JindalRegistrationModel).filter_by(jgu_student_id=jgu_student_id).first()
 
+    def get_by_email_or_jgu_id(self, db: Session, email: str, jgu_student_id: str) -> Optional[JindalRegistrationModel]:
+        """Get registration by email or JGU Student ID"""
+        return db.query(JindalRegistrationModel).filter(
+            (JindalRegistrationModel.email == email.lower()) | 
+            (JindalRegistrationModel.jgu_student_id == jgu_student_id.upper())
+        ).first()
+
     def get_by_payment_status(self, db: Session, payment_status: str) -> List[JindalRegistrationModel]:
         """Get registrations by payment status"""
         return db.query(JindalRegistrationModel).filter_by(payment_status=payment_status).all()
