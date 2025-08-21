@@ -30,6 +30,21 @@ def test_ses_quota():
     except Exception as e:
         print(f"❌ Error testing SES quota: {e}")
 
+def test_ses_account():
+    """Test SES account endpoint"""
+    print("\nTesting SES account endpoint...")
+    try:
+        response = requests.get(f"{BASE_URL}/ses/account")
+        if response.status_code == 200:
+            data = response.json()
+            print("✅ SES account endpoint working")
+            print(f"Account info: {data}")
+        else:
+            print(f"❌ SES account endpoint failed: {response.status_code}")
+            print(f"Response: {response.text}")
+    except Exception as e:
+        print(f"❌ Error testing SES account: {e}")
+
 def test_email_verification():
     """Test email verification endpoint"""
     print("\nTesting email verification endpoint...")
@@ -157,6 +172,7 @@ def main():
     
     # Run tests
     test_ses_quota()
+    test_ses_account()
     test_email_verification()
     test_registration_with_email()
     test_jindal_registration_with_email()

@@ -16,7 +16,7 @@ class SESEmailService:
             aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY'),
             region_name=os.environ.get('AWS_REGION', 'ap-south-1')
         )
-        self.sender_email = os.environ.get('SES_SENDER_EMAIL', 'mail.alldays.club')
+        self.sender_email = os.environ.get('SES_SENDER_EMAIL', 'alldaysapp@gmail.com')
         self.verified_emails = os.environ.get('SES_VERIFIED_EMAILS', '').split(',') if os.environ.get('SES_VERIFIED_EMAILS') else []
 
     def send_confirmation_email(self, 
@@ -421,15 +421,30 @@ This is an automated email. Please do not reply to this address.
 
     def get_send_quota(self) -> dict:
         """
-        Get SES sending quota information
+        Get SES sending quota information using SES v2 API
         """
         try:
-            response = self.ses_client.get_send_quota()
+            # Use SES v2 client for better account information
+            ses_v2_client = boto3.client(
+                'sesv2',
+                aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
+                aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY'),
+                region_name=os.environ.get('AWS_REGION', 'ap-south-1')
+            )
+            
+            # Get account information using SES v2
+            account_response = ses_v2_client.get_account()
+            
+            # Get quota information using SES v1 (for compatibility)
+            quota_response = self.ses_client.get_send_quota()
+            
             return {
-                'max_24_hour_send': response['Max24HourSend'],
-                'sent_last_24_hours': response['SentLast24Hours'],
-                'max_send_rate': response['MaxSendRate'],
-                'sending_enabled': response.get('SendingEnabled', False)
+                'max_24_hour_send': quota_response['Max24HourSend'],
+                'sent_last_24_hours': quota_response['SentLast24Hours'],
+                'max_send_rate': quota_response['MaxSendRate'],
+                'sending_enabled': account_response.get('SendingEnabled', False),
+                'production_access_enabled': account_response.get('ProductionAccessEnabled', False),
+                'enforcement_status': account_response.get('EnforcementStatus', 'UNKNOWN')
             }
         except Exception as e:
             logger.error(f"Error getting SES quota: {e}")

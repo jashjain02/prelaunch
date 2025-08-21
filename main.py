@@ -1081,6 +1081,33 @@ def get_ses_quota(request: Request):
             content={"detail": "Failed to get SES quota information"}
         )
 
+@app.get('/ses/account')
+def get_ses_account(request: Request):
+    """
+    Get detailed SES account information (admin endpoint)
+    """
+    check_rate_limit(request)
+    try:
+        import boto3
+        ses_v2_client = boto3.client(
+            'sesv2',
+            aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
+            aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY'),
+            region_name=os.environ.get('AWS_REGION', 'ap-south-1')
+        )
+        
+        account_info = ses_v2_client.get_account()
+        return {
+            "account_info": account_info,
+            "status": "success"
+        }
+    except Exception as e:
+        logger.error(f"Error getting SES account info: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Failed to get SES account information"}
+        )
+
 @app.post('/ses/verify-email')
 def verify_email_identity(
     request: Request,

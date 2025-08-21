@@ -39,7 +39,7 @@ This guide explains how to set up and use AWS SES (Simple Email Service) for sen
 
 #### Step 2: Verify Email Addresses
 1. In SES Console, go to "Verified identities"
-2. Add and verify your sender email: `mail.alldays.club`
+2. Add and verify your sender email: `alldaysapp@gmail.com`
 3. Verify recipient emails for testing
 
 #### Step 3: Configure Environment Variables
@@ -52,7 +52,7 @@ AWS_SECRET_ACCESS_KEY=your_secret_key
 AWS_REGION=ap-south-1
 
 # SES Configuration
-SES_SENDER_EMAIL=mail.alldays.club
+SES_SENDER_EMAIL=alldaysapp@gmail.com
 SES_VERIFIED_EMAILS=test@example.com,admin@alldays.club
 ```
 
@@ -160,6 +160,11 @@ Parameters:
 GET /ses/quota
 ```
 
+**Get SES Account Details:**
+```http
+GET /ses/account
+```
+
 **Verify Email Address:**
 ```http
 POST /ses/verify-email
@@ -223,7 +228,7 @@ python test_ses_integration.py
 AWS_ACCESS_KEY_ID=your_production_key
 AWS_SECRET_ACCESS_KEY=your_production_secret
 AWS_REGION=ap-south-1
-SES_SENDER_EMAIL=mail.alldays.club
+SES_SENDER_EMAIL=alldaysapp@gmail.com
 ```
 
 ### 2. SES Production Access
