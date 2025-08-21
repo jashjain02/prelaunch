@@ -32,9 +32,23 @@
             border-bottom: none;
         }
         .logo { 
-            max-width: 120px; 
-            height: auto; 
             margin-bottom: 20px; 
+            text-align: center;
+        }
+        .logo-text {
+            display: inline-block;
+            width: 80px;
+            height: 80px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            font-family: 'Clash Display', sans-serif;
+            font-size: 32px;
+            font-weight: 600;
+            color: #ffffff;
+            line-height: 76px;
+            text-align: center;
+            letter-spacing: 1px;
         }
         .content { 
             background: #ffffff; 
@@ -139,11 +153,9 @@
 <body>
     <div class="container">
         <div class="header">
-            <svg class="logo" viewBox="0 0 100 60" xmlns="http://www.w3.org/2000/svg">
-                <path d="M20 50 L40 10 L60 50 L50 50 L45 35 L35 35 L30 50 Z" 
-                      fill="#ffffff" stroke="#ffffff" stroke-width="2"/>
-                <circle cx="40" cy="25" r="3" fill="#ffffff"/>
-            </svg>
+            <div class="logo">
+                <div class="logo-text">AL</div>
+            </div>
             <h1>🎉 Jindal Registration Confirmed!</h1>
             <p class="welcome-text">Welcome to Alldays x Jindal Event</p>
         </div>
@@ -159,28 +171,28 @@
             
             <div class="details">
                 <div class="detail-row">
-                    <span class="detail-label">Name:</span>
+                    <span class="detail-label">Name: </span>
                     <span class="detail-value">{{FIRST_NAME}} {{LAST_NAME}}</span>
                 </div>
                 <div class="detail-row">
-                    <span class="detail-label">Email:</span>
+                    <span class="detail-label">Email: </span>
                     <span class="detail-value">{{EMAIL}}</span>
                 </div>
                 <div class="detail-row">
-                    <span class="detail-label">JGU Student ID:</span>
+                    <span class="detail-label">JGU Student ID: </span>
                     <span class="detail-value">{{JGU_STUDENT_ID}}</span>
                 </div>
                 <div class="detail-row">
-                    <span class="detail-label">Location:</span>
+                    <span class="detail-label">Location: </span>
                     <span class="detail-value">{{CITY}}, {{STATE}}</span>
                 </div>
                 <div class="detail-row">
-                    <span class="detail-label">Selected Sports:</span>
+                    <span class="detail-label">Selected Sports: </span>
                     <span class="detail-value">{{SELECTED_SPORTS}}</span>
                 </div>
                 {{PICKLEBALL_LEVEL_ROW}}
                 <div class="detail-row">
-                    <span class="detail-label">Total Amount:</span>
+                    <span class="detail-label">Total Amount: </span>
                     <span class="detail-value">₹{{TOTAL_AMOUNT}}</span>
                 </div>
             </div>
@@ -190,14 +202,13 @@
                 <li>Please arrive 15 minutes before your scheduled time</li>
                 <li>Bring comfortable workout clothes and shoes</li>
                 <li>Don't forget to bring your JGU Student ID</li>
-                <li>Payment proof has been uploaded successfully</li>
             </ul>
             
             <h3>Important Notes:</h3>
             <ul>
                 <li>This registration is linked to your JGU Student ID</li>
                 <li>Please keep this email for your records</li>
-                <li>For any queries, contact us at support@alldays.club</li>
+                <li>For any queries, contact us at alldaysapp@gmail.com</li>
             </ul>
             
             <p>We're excited to see you at the event!</p>
