@@ -14,7 +14,7 @@ class SESEmailService:
             'ses',
             aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
             aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY'),
-            region_name=os.environ.get('AWS_REGION', 'us-east-1')
+            region_name=os.environ.get('AWS_REGION', 'ap-south-1')
         )
         self.sender_email = os.environ.get('SES_SENDER_EMAIL', 'mail.alldays.club')
         self.verified_emails = os.environ.get('SES_VERIFIED_EMAILS', '').split(',') if os.environ.get('SES_VERIFIED_EMAILS') else []

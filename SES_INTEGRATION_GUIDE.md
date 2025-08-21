@@ -34,7 +34,7 @@ This guide explains how to set up and use AWS SES (Simple Email Service) for sen
 
 #### Step 1: Create AWS SES Account
 1. Go to AWS Console → SES (Simple Email Service)
-2. Choose your region (recommended: us-east-1)
+2. Choose your region (recommended: ap-south-1 for Mumbai)
 3. Move out of sandbox mode (request production access)
 
 #### Step 2: Verify Email Addresses
@@ -49,7 +49,7 @@ Add these to your `.env` file:
 # AWS Configuration
 AWS_ACCESS_KEY_ID=your_access_key
 AWS_SECRET_ACCESS_KEY=your_secret_key
-AWS_REGION=us-east-1
+AWS_REGION=ap-south-1
 
 # SES Configuration
 SES_SENDER_EMAIL=mail.alldays.club
@@ -222,7 +222,7 @@ python test_ses_integration.py
 # Production environment variables
 AWS_ACCESS_KEY_ID=your_production_key
 AWS_SECRET_ACCESS_KEY=your_production_secret
-AWS_REGION=us-east-1
+AWS_REGION=ap-south-1
 SES_SENDER_EMAIL=mail.alldays.club
 ```
 
