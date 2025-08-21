@@ -620,6 +620,182 @@ def create_jindal_registration(
             content={"detail": "An unexpected error occurred. Please try again later or contact support."}
         )
 
+@app.post('/jindal-registration-with-email', response_model=JindalRegistrationResponse)
+def create_jindal_registration_with_email(
+    request: Request,
+    first_name: str = Form(...),
+    last_name: str = Form(...),
+    email: str = Form(...),
+    phone: str = Form(...),
+    jgu_student_id: str = Form(...),
+    city: str = Form(...),
+    state: str = Form(...),
+    selected_sports: str = Form(...),  # JSON string of selected sports
+    pickle_level: str = Form(None),
+    total_amount: int = Form(...),
+    agreed_to_terms: bool = Form(True),
+    file: UploadFile = File(None),
+    db: Session = Depends(get_db),
+):
+    """
+    Create Jindal registration with email confirmation (new endpoint)
+    """
+    check_rate_limit(request)
+    
+    try:
+        # Validate phone number
+        phone_digits = ''.join(filter(str.isdigit, phone))
+        if len(phone_digits) < 10:
+            raise HTTPException(
+                status_code=422,
+                detail="Invalid phone number. Must be at least 10 digits."
+            )
+        
+        # Validate email format
+        if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
+            raise HTTPException(
+                status_code=422,
+                detail="Invalid email format."
+            )
+        
+        # Check if registration already exists
+        existing_registration = jindal_registration_connector.get_by_email_or_jgu_id(
+            db, email, jgu_student_id
+        )
+        if existing_registration:
+            raise HTTPException(
+                status_code=409,
+                detail="Registration already exists with this email or JGU Student ID."
+            )
+        
+        # Handle file upload if provided
+        payment_proof_url = None
+        if file:
+            try:
+                # Validate file type
+                if not file.content_type.startswith('image/'):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Only image files are allowed for payment proof"
+                    )
+                
+                # Upload to S3
+                s3 = boto3.client(
+                    's3',
+                    aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
+                    aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY')
+                )
+                bucket_name = os.environ.get('AWS_S3_BUCKET', 'alldayspayments')
+                file_ext = file.filename.split('.')[-1]
+                s3_key = f"jindalpayments/{email}_{first_name}_{last_name}.{file_ext}"
+                s3.upload_fileobj(file.file, bucket_name, s3_key)
+                payment_proof_url = f"https://{bucket_name}.s3.amazonaws.com/{s3_key}"
+                logger.info(f"Payment proof uploaded to S3: {payment_proof_url}")
+                
+            except NoCredentialsError:
+                logger.error("AWS credentials not found.")
+                return JSONResponse(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+                    content={"detail": "AWS credentials not found. Please contact support."}
+                )
+            except Exception as s3e:
+                logger.error(f"S3 upload failed: {s3e}", exc_info=True)
+                return JSONResponse(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+                    content={"detail": "File upload failed. Please try again later or contact support."}
+                )
+        
+        # Parse selected_sports if it's a JSON string
+        try:
+            if selected_sports.startswith('['):
+                selected_sports_list = json.loads(selected_sports)
+            else:
+                selected_sports_list = [selected_sports]
+        except json.JSONDecodeError:
+            selected_sports_list = [selected_sports]
+        
+        # Create registration data
+        registration_data = {
+            'first_name': first_name.strip(),
+            'last_name': last_name.strip(),
+            'email': email.lower().strip(),
+            'phone': phone_digits,
+            'jgu_student_id': jgu_student_id.upper().strip(),
+            'city': city.strip(),
+            'state': state.strip(),
+            'selected_sports': selected_sports_list,
+            'pickle_level': pickle_level.strip() if pickle_level else None,
+            'total_amount': total_amount,
+            'payment_status': 'pending',
+            'payment_proof': payment_proof_url,
+            'agreed_to_terms': agreed_to_terms
+        }
+        
+        # Create registration
+        registration = jindal_registration_connector.create_registration(db, registration_data)
+        
+        logger.info(f"Jindal registration with email created: id={registration.id}, email={email}, jgu_id={jgu_student_id}")
+        
+        # Send confirmation email
+        email_sent = False
+        email_error_message = None
+        try:
+            email_sent = ses_email_service.send_jindal_confirmation_email(
+                recipient_email=email,
+                first_name=first_name,
+                last_name=last_name,
+                jgu_student_id=jgu_student_id,
+                selected_sports=json.dumps(selected_sports_list),
+                total_amount=total_amount,
+                city=city,
+                state=state,
+                pickle_level=pickle_level
+            )
+            if email_sent:
+                logger.info(f"Jindal confirmation email sent successfully to {email}")
+            else:
+                logger.warning(f"Failed to send Jindal confirmation email to {email}")
+                email_error_message = "Registration successful but email delivery failed"
+        except Exception as email_error:
+            logger.error(f"Error sending Jindal confirmation email to {email}: {email_error}", exc_info=True)
+            email_error_message = f"Registration successful but email delivery failed: {str(email_error)}"
+        
+        response_data = {
+            "id": registration.id,
+            "first_name": registration.first_name,
+            "last_name": registration.last_name,
+            "email": registration.email,
+            "phone": registration.phone,
+            "jgu_student_id": registration.jgu_student_id,
+            "city": registration.city,
+            "state": registration.state,
+            "selected_sports": json.loads(registration.selected_sports) if registration.selected_sports else [],
+            "pickle_level": registration.pickle_level,
+            "total_amount": registration.total_amount,
+            "payment_status": registration.payment_status,
+            "payment_proof": registration.payment_proof,
+            "agreed_to_terms": registration.agreed_to_terms,
+            "created_at": registration.created_at,
+            "updated_at": registration.updated_at,
+            "message": "Registration successful",
+            "payment_proof_url": payment_proof_url,
+            "email_sent": email_sent
+        }
+        
+        if email_error_message:
+            response_data["email_error"] = email_error_message
+        
+        return response_data
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in Jindal registration with email: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            content={"detail": "An unexpected error occurred. Please try again later or contact support."}
+        )
+
 @app.get('/jindal-registrations', response_model=JindalRegistrationListResponse)
 def get_jindal_registrations(
     request: Request,

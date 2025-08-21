@@ -75,6 +75,70 @@ def test_registration_with_email():
     except Exception as e:
         print(f"❌ Error testing registration with email: {e}")
 
+def test_jindal_registration_with_email():
+    """Test Jindal registration with email endpoint"""
+    print("\nTesting Jindal registration with email endpoint...")
+    try:
+        data = {
+            "first_name": "Test",
+            "last_name": "Jindal",
+            "email": TEST_EMAIL,
+            "phone": "9876543210",
+            "jgu_student_id": "JGU2024001",
+            "city": "Mumbai",
+            "state": "Maharashtra",
+            "selected_sports": '["pickleball"]',
+            "pickle_level": "beginner",
+            "total_amount": 1500,
+            "agreed_to_terms": True
+        }
+        
+        response = requests.post(f"{BASE_URL}/jindal-registration-with-email", data=data)
+        if response.status_code == 200:
+            result = response.json()
+            print("✅ Jindal registration with email endpoint working")
+            print(f"Registration ID: {result.get('id')}")
+            print(f"JGU Student ID: {result.get('jgu_student_id')}")
+            print(f"Email sent: {result.get('email_sent')}")
+            if result.get('email_error'):
+                print(f"Email error: {result.get('email_error')}")
+        else:
+            print(f"❌ Jindal registration with email endpoint failed: {response.status_code}")
+            print(f"Response: {response.text}")
+    except Exception as e:
+        print(f"❌ Error testing Jindal registration with email: {e}")
+
+def test_jindal_registration_original():
+    """Test original Jindal registration endpoint (no email)"""
+    print("\nTesting original Jindal registration endpoint...")
+    try:
+        data = {
+            "first_name": "Test",
+            "last_name": "Jindal",
+            "email": TEST_EMAIL,
+            "phone": "9876543210",
+            "jgu_student_id": "JGU2024002",
+            "city": "Mumbai",
+            "state": "Maharashtra",
+            "selected_sports": '["pickleball"]',
+            "pickle_level": "beginner",
+            "total_amount": 1500,
+            "agreed_to_terms": True
+        }
+        
+        response = requests.post(f"{BASE_URL}/jindal-registration", data=data)
+        if response.status_code == 200:
+            result = response.json()
+            print("✅ Original Jindal registration endpoint working")
+            print(f"Registration ID: {result.get('id')}")
+            print(f"JGU Student ID: {result.get('jgu_student_id')}")
+            print("Note: No email sent (as expected)")
+        else:
+            print(f"❌ Original Jindal registration endpoint failed: {response.status_code}")
+            print(f"Response: {response.text}")
+    except Exception as e:
+        print(f"❌ Error testing original Jindal registration: {e}")
+
 def main():
     """Run all tests"""
     print("🚀 Testing SES Email Integration")
@@ -95,6 +159,8 @@ def main():
     test_ses_quota()
     test_email_verification()
     test_registration_with_email()
+    test_jindal_registration_with_email()
+    test_jindal_registration_original()
     
     print("\n" + "=" * 50)
     print("🏁 Testing completed!")

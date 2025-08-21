@@ -13,9 +13,18 @@ This guide explains how to set up and use AWS SES (Simple Email Service) for sen
 - Detailed registration information included in emails
 
 ### 📧 **Email Content**
+
+#### Event Registration Emails
 - Registration confirmation with booking ID
 - Event details (date, location, selected sports)
 - Orangetheory batch information (if applicable)
+- Next steps and important notes
+- Contact information
+
+#### Jindal Registration Emails
+- Registration confirmation with JGU Student ID
+- Event details (location, selected sports, pickleball level)
+- Payment information and amount
 - Next steps and important notes
 - Contact information
 
@@ -30,7 +39,7 @@ This guide explains how to set up and use AWS SES (Simple Email Service) for sen
 
 #### Step 2: Verify Email Addresses
 1. In SES Console, go to "Verified identities"
-2. Add and verify your sender email: `noreply@alldays.club`
+2. Add and verify your sender email: `mail.alldays.club`
 3. Verify recipient emails for testing
 
 #### Step 3: Configure Environment Variables
@@ -43,13 +52,13 @@ AWS_SECRET_ACCESS_KEY=your_secret_key
 AWS_REGION=us-east-1
 
 # SES Configuration
-SES_SENDER_EMAIL=noreply@alldays.club
+SES_SENDER_EMAIL=mail.alldays.club
 SES_VERIFIED_EMAILS=test@example.com,admin@alldays.club
 ```
 
 ### 2. API Endpoints
 
-#### New Registration Endpoint with Email
+#### Event Registration Endpoint with Email
 ```http
 POST /event-registration-with-email
 Content-Type: multipart/form-data
@@ -73,6 +82,73 @@ Parameters:
   "booking_id": "ABC12345",
   "message": "Registration successful",
   "file_url": "https://...",
+  "email_sent": true
+}
+```
+
+#### Jindal Registration Endpoint (Original - No Email)
+```http
+POST /jindal-registration
+Content-Type: multipart/form-data
+
+Parameters:
+- first_name (required): User's first name
+- last_name (required): User's last name
+- email (required): User's email address
+- phone (required): User's phone number
+- jgu_student_id (required): JGU Student ID
+- city (required): City
+- state (required): State
+- selected_sports (required): JSON string of selected sports
+- pickle_level (optional): Pickleball level
+- total_amount (required): Total amount
+- agreed_to_terms (required): Terms agreement
+- file (optional): Payment proof
+```
+
+**Response:**
+```json
+{
+  "id": 123,
+  "first_name": "John",
+  "last_name": "Doe",
+  "email": "john@example.com",
+  "jgu_student_id": "JGU2024001",
+  "message": "Registration successful",
+  "payment_proof_url": "https://..."
+}
+```
+
+#### Jindal Registration Endpoint with Email (New)
+```http
+POST /jindal-registration-with-email
+Content-Type: multipart/form-data
+
+Parameters:
+- first_name (required): User's first name
+- last_name (required): User's last name
+- email (required): User's email address
+- phone (required): User's phone number
+- jgu_student_id (required): JGU Student ID
+- city (required): City
+- state (required): State
+- selected_sports (required): JSON string of selected sports
+- pickle_level (optional): Pickleball level
+- total_amount (required): Total amount
+- agreed_to_terms (required): Terms agreement
+- file (optional): Payment proof
+```
+
+**Response:**
+```json
+{
+  "id": 123,
+  "first_name": "John",
+  "last_name": "Doe",
+  "email": "john@example.com",
+  "jgu_student_id": "JGU2024001",
+  "message": "Registration successful",
+  "payment_proof_url": "https://...",
   "email_sent": true
 }
 ```
@@ -147,7 +223,7 @@ python test_ses_integration.py
 AWS_ACCESS_KEY_ID=your_production_key
 AWS_SECRET_ACCESS_KEY=your_production_secret
 AWS_REGION=us-east-1
-SES_SENDER_EMAIL=noreply@alldays.club
+SES_SENDER_EMAIL=mail.alldays.club
 ```
 
 ### 2. SES Production Access
