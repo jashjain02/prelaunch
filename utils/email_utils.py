@@ -4,7 +4,6 @@ import logging
 from botocore.exceptions import NoCredentialsError, ClientError
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from email.mime.image import MIMEImage
 from typing import Optional
 from templates.email_templates import template_loader
 
@@ -20,25 +19,6 @@ class SESEmailService:
         )
         self.sender_email = os.environ.get('SES_SENDER_EMAIL', 'alldaysapp@gmail.com')
         self.verified_emails = os.environ.get('SES_VERIFIED_EMAILS', '').split(',') if os.environ.get('SES_VERIFIED_EMAILS') else []
-
-    def _attach_logo(self, msg):
-        """Helper method to attach the Alldays logo to email"""
-        try:
-            logo_path = os.path.join(os.path.dirname(__file__), '..', 'templates', 'Logo4.png')
-            if os.path.exists(logo_path):
-                with open(logo_path, 'rb') as logo_file:
-                    logo_image = MIMEImage(logo_file.read())
-                    logo_image.add_header('Content-ID', '<alldays_logo>')
-                    logo_image.add_header('Content-Disposition', 'inline', filename='alldays_logo.png')
-                    msg.attach(logo_image)
-                    logger.info("Logo attached successfully")
-                    return True
-            else:
-                logger.warning(f"Logo file not found at: {logo_path}")
-                return False
-        except Exception as logo_error:
-            logger.error(f"Error attaching logo: {logo_error}")
-            return False
 
     def send_confirmation_email(self, 
                                recipient_email: str, 
@@ -125,23 +105,16 @@ This is an automated email. Please do not reply to this address.
             """
             
             # Create message
-            msg = MIMEMultipart('related')
+            msg = MIMEMultipart('alternative')
             msg['Subject'] = subject
             msg['From'] = self.sender_email
             msg['To'] = recipient_email
             
-            # Create alternative part for text and HTML
-            msg_alternative = MIMEMultipart('alternative')
-            msg.attach(msg_alternative)
-            
             # Attach both HTML and text versions
             text_part = MIMEText(text_content, 'plain')
             html_part = MIMEText(html_content, 'html')
-            msg_alternative.attach(text_part)
-            msg_alternative.attach(html_part)
-            
-            # Attach logo image
-            self._attach_logo(msg)
+            msg.attach(text_part)
+            msg.attach(html_part)
             
             # Send email
             response = self.ses_client.send_raw_email(
@@ -251,23 +224,16 @@ This is an automated email. Please do not reply to this address.
             """
             
             # Create message
-            msg = MIMEMultipart('related')
+            msg = MIMEMultipart('alternative')
             msg['Subject'] = subject
             msg['From'] = self.sender_email
             msg['To'] = recipient_email
             
-            # Create alternative part for text and HTML
-            msg_alternative = MIMEMultipart('alternative')
-            msg.attach(msg_alternative)
-            
             # Attach both HTML and text versions
             text_part = MIMEText(text_content, 'plain')
             html_part = MIMEText(html_content, 'html')
-            msg_alternative.attach(text_part)
-            msg_alternative.attach(html_part)
-            
-            # Attach logo image
-            self._attach_logo(msg)
+            msg.attach(text_part)
+            msg.attach(html_part)
             
             # Send email
             response = self.ses_client.send_raw_email(
