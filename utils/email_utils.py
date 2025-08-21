@@ -4,6 +4,7 @@ import logging
 from botocore.exceptions import NoCredentialsError, ClientError
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.image import MIMEImage
 from typing import Optional
 from templates.email_templates import template_loader
 
@@ -19,6 +20,25 @@ class SESEmailService:
         )
         self.sender_email = os.environ.get('SES_SENDER_EMAIL', 'alldaysapp@gmail.com')
         self.verified_emails = os.environ.get('SES_VERIFIED_EMAILS', '').split(',') if os.environ.get('SES_VERIFIED_EMAILS') else []
+
+    def _attach_logo(self, msg):
+        """Helper method to attach the Alldays logo to email"""
+        try:
+            logo_path = os.path.join(os.path.dirname(__file__), '..', 'templates', 'Logo4.png')
+            if os.path.exists(logo_path):
+                with open(logo_path, 'rb') as logo_file:
+                    logo_image = MIMEImage(logo_file.read())
+                    logo_image.add_header('Content-ID', '<alldays_logo>')
+                    logo_image.add_header('Content-Disposition', 'inline', filename='alldays_logo.png')
+                    msg.attach(logo_image)
+                    logger.info("Logo attached successfully")
+                    return True
+            else:
+                logger.warning(f"Logo file not found at: {logo_path}")
+                return False
+        except Exception as logo_error:
+            logger.error(f"Error attaching logo: {logo_error}")
+            return False
 
     def send_confirmation_email(self, 
                                recipient_email: str, 
@@ -60,7 +80,7 @@ class SESEmailService:
                 'SELECTED_SPORTS': sports_display,
                 'EVENT_DATE': event_date,
                 'EVENT_LOCATION': event_location,
-                'ORANGETHEORY_BATCH_ROW': f'<div class="detail-row"><span class="detail-label">Orangetheory Batch:</span><span>{orangetheory_batch.title()}</span></div>' if orangetheory_batch else ''
+                'ORANGETHEORY_BATCH_ROW': f'<div class="detail-row"><span class="detail-label">Orangetheory Batch: </span><span class="detail-value">{orangetheory_batch.title()}</span></div>' if orangetheory_batch else ''
             }
             
             # Create HTML email content using template
@@ -88,12 +108,11 @@ What's Next?
 - Please arrive 15 minutes before your scheduled time
 - Bring comfortable workout clothes and shoes
 - Don't forget to bring your booking ID
-- Payment can be made on-site
 
 Important Notes:
 - This booking ID is unique to your registration
 - Please keep this email for your records
-- For any queries, contact us at support@alldays.club
+- For any queries, contact us at alldaysapp@gmail.com
 
 We're excited to see you at the event!
 
@@ -106,16 +125,23 @@ This is an automated email. Please do not reply to this address.
             """
             
             # Create message
-            msg = MIMEMultipart('alternative')
+            msg = MIMEMultipart('related')
             msg['Subject'] = subject
             msg['From'] = self.sender_email
             msg['To'] = recipient_email
             
+            # Create alternative part for text and HTML
+            msg_alternative = MIMEMultipart('alternative')
+            msg.attach(msg_alternative)
+            
             # Attach both HTML and text versions
             text_part = MIMEText(text_content, 'plain')
             html_part = MIMEText(html_content, 'html')
-            msg.attach(text_part)
-            msg.attach(html_part)
+            msg_alternative.attach(text_part)
+            msg_alternative.attach(html_part)
+            
+            # Attach logo image
+            self._attach_logo(msg)
             
             # Send email
             response = self.ses_client.send_raw_email(
@@ -179,7 +205,7 @@ This is an automated email. Please do not reply to this address.
                 'STATE': state.title(),
                 'SELECTED_SPORTS': sports_display,
                 'TOTAL_AMOUNT': total_amount,
-                'PICKLEBALL_LEVEL_ROW': f'<div class="detail-row"><span class="detail-label">Pickleball Level:</span><span>{pickle_level.title()}</span></div>' if pickle_level else ''
+                'PICKLEBALL_LEVEL_ROW': f'<div class="detail-row"><span class="detail-label">Pickleball Level: </span><span class="detail-value">{pickle_level.title()}</span></div>' if pickle_level else ''
             }
             
             # Create HTML email content using template
@@ -208,12 +234,11 @@ What's Next?
 - Please arrive 15 minutes before your scheduled time
 - Bring comfortable workout clothes and shoes
 - Don't forget to bring your JGU Student ID
-- Payment proof has been uploaded successfully
 
 Important Notes:
 - This registration is linked to your JGU Student ID
 - Please keep this email for your records
-- For any queries, contact us at support@alldays.club
+- For any queries, contact us at alldaysapp@gmail.com
 
 We're excited to see you at the event!
 
@@ -226,16 +251,23 @@ This is an automated email. Please do not reply to this address.
             """
             
             # Create message
-            msg = MIMEMultipart('alternative')
+            msg = MIMEMultipart('related')
             msg['Subject'] = subject
             msg['From'] = self.sender_email
             msg['To'] = recipient_email
             
+            # Create alternative part for text and HTML
+            msg_alternative = MIMEMultipart('alternative')
+            msg.attach(msg_alternative)
+            
             # Attach both HTML and text versions
             text_part = MIMEText(text_content, 'plain')
             html_part = MIMEText(html_content, 'html')
-            msg.attach(text_part)
-            msg.attach(html_part)
+            msg_alternative.attach(text_part)
+            msg_alternative.attach(html_part)
+            
+            # Attach logo image
+            self._attach_logo(msg)
             
             # Send email
             response = self.ses_client.send_raw_email(
