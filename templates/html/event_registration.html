@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Registration Confirmation</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap');
+        @import url('https://api.fontshare.com/v2/css?f[]=clash-display@600&display=swap');
+        
+        body { 
+            font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+            line-height: 1.6; 
+            color: #EEEEEE; 
+            background-color: #282828;
+            margin: 0;
+            padding: 0;
+            font-weight: 300;
+        }
+        .container { 
+            max-width: 600px; 
+            margin: 0 auto; 
+            padding: 20px; 
+            background-color: #282828;
+        }
+        .header { 
+            background: linear-gradient(135deg, #282828 0%, #6B58CD 100%); 
+            color: white; 
+            padding: 40px 30px; 
+            text-align: center; 
+            border-radius: 16px 16px 0 0;
+            border: 1px solid #6B58CD;
+            border-bottom: none;
+        }
+        .logo { 
+            max-width: 120px; 
+            height: auto; 
+            margin-bottom: 20px; 
+            filter: brightness(1.2);
+        }
+        .content { 
+            background: #282828; 
+            padding: 40px 30px; 
+            border-radius: 0 0 16px 16px;
+            border: 1px solid #6B58CD;
+            border-top: none;
+        }
+        .booking-id { 
+            background: linear-gradient(135deg, #6B58CD 0%, #E7FF00 100%); 
+            color: #282828; 
+            padding: 16px; 
+            border-radius: 12px; 
+            font-weight: 600; 
+            text-align: center; 
+            margin: 24px 0;
+            font-size: 18px;
+            letter-spacing: 0.5px;
+            font-family: 'Clash Display', sans-serif;
+        }
+        .details { 
+            background: #282828; 
+            padding: 24px; 
+            border-radius: 12px; 
+            margin: 24px 0;
+            border: 1px solid #6B58CD;
+        }
+        .detail-row { 
+            display: flex; 
+            justify-content: space-between; 
+            margin: 12px 0; 
+            padding: 8px 0; 
+            border-bottom: 1px solid #6B58CD; 
+        }
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+        .detail-label { 
+            font-weight: 500; 
+            color: #E7FF00; 
+            font-size: 14px;
+            font-family: 'Poppins', sans-serif;
+        }
+        .detail-value {
+            color: #EEEEEE;
+            font-weight: 300;
+            font-family: 'Poppins', sans-serif;
+        }
+        .footer { 
+            text-align: center; 
+            margin-top: 40px; 
+            color: #EEEEEE; 
+            font-size: 14px;
+            padding: 20px;
+            background: #282828;
+            border-radius: 12px;
+            border: 1px solid #6B58CD;
+        }
+        h1 {
+            font-size: 32px;
+            font-weight: 600;
+            margin: 0 0 8px 0;
+            letter-spacing: -0.5px;
+            font-family: 'Clash Display', sans-serif;
+            color: #E7FF00;
+        }
+        h3 {
+            font-size: 22px;
+            font-weight: 500;
+            color: #FF4605;
+            margin: 32px 0 16px 0;
+            font-family: 'Poppins', sans-serif;
+        }
+        p {
+            margin: 16px 0;
+            color: #EEEEEE;
+            font-family: 'Poppins', sans-serif;
+            font-weight: 300;
+        }
+        ul {
+            color: #EEEEEE;
+            padding-left: 20px;
+            font-family: 'Poppins', sans-serif;
+            font-weight: 300;
+        }
+        li {
+            margin: 8px 0;
+        }
+        .welcome-text {
+            font-size: 18px;
+            color: #E7FF00;
+            font-weight: 500;
+            margin: 0;
+            font-family: 'Poppins', sans-serif;
+        }
+        .highlight {
+            color: #FF4605;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <svg class="logo" viewBox="0 0 100 60" xmlns="http://www.w3.org/2000/svg">
+                <path d="M20 50 L40 10 L60 50 L50 50 L45 35 L35 35 L30 50 Z" 
+                      fill="white" stroke="white" stroke-width="2"/>
+                <circle cx="40" cy="25" r="3" fill="white"/>
+            </svg>
+            <h1>🎉 Registration Confirmed!</h1>
+            <p class="welcome-text">Welcome to Alldays x OnTour</p>
+        </div>
+        
+        <div class="content">
+            <p>Hi {{FIRST_NAME}} {{LAST_NAME}},</p>
+            
+            <p>Your registration for the Alldays event has been successfully confirmed! Here are your registration details:</p>
+            
+            <div class="booking-id">
+                Booking ID: {{BOOKING_ID}}
+            </div>
+            
+            <div class="details">
+                <div class="detail-row">
+                    <span class="detail-label">Name:</span>
+                    <span class="detail-value">{{FIRST_NAME}} {{LAST_NAME}}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Email:</span>
+                    <span class="detail-value">{{EMAIL}}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Selected Sports:</span>
+                    <span class="detail-value">{{SELECTED_SPORTS}}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Event Date:</span>
+                    <span class="detail-value">{{EVENT_DATE}}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Event Location:</span>
+                    <span class="detail-value">{{EVENT_LOCATION}}</span>
+                </div>
+                {{ORANGETHEORY_BATCH_ROW}}
+            </div>
+            
+            <h3>What's Next?</h3>
+            <ul>
+                <li>Please arrive 15 minutes before your scheduled time</li>
+                <li>Bring comfortable workout clothes and shoes</li>
+                <li>Don't forget to bring your booking ID</li>
+                <li>Payment can be made on-site</li>
+            </ul>
+            
+            <h3>Important Notes:</h3>
+            <ul>
+                <li>This booking ID is unique to your registration</li>
+                <li>Please keep this email for your records</li>
+                <li>For any queries, contact us at support@alldays.club</li>
+            </ul>
+            
+            <p>We're excited to see you at the event!</p>
+            
+            <p>Best regards,<br>
+            Team Alldays</p>
+        </div>
+        
+        <div class="footer">
+            <p>This is an automated email. Please do not reply to this address.</p>
+            <p>© 2024 Alldays. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>

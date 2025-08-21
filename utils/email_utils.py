@@ -5,6 +5,7 @@ from botocore.exceptions import NoCredentialsError, ClientError
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import Optional
+from templates.email_templates import template_loader
 
 logger = logging.getLogger(__name__)
 
@@ -50,94 +51,20 @@ class SESEmailService:
             # Format sports for display
             sports_display = ", ".join([sport.title() for sport in sports_list])
             
-            # Create HTML email content
-            html_content = f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="utf-8">
-                <title>Registration Confirmation</title>
-                <style>
-                    body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-                    .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                    .header {{ background: linear-gradient(135deg, #6b58cd 0%, #e7ff00 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
-                    .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }}
-                    .booking-id {{ background: #e7ff00; color: #333; padding: 10px; border-radius: 5px; font-weight: bold; text-align: center; margin: 20px 0; }}
-                    .details {{ background: white; padding: 20px; border-radius: 5px; margin: 20px 0; }}
-                    .detail-row {{ display: flex; justify-content: space-between; margin: 10px 0; padding: 5px 0; border-bottom: 1px solid #eee; }}
-                    .detail-label {{ font-weight: bold; color: #6b58cd; }}
-                    .footer {{ text-align: center; margin-top: 30px; color: #666; font-size: 14px; }}
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    <div class="header">
-                        <h1>🎉 Registration Confirmed!</h1>
-                        <p>Welcome to Alldays x OnTour</p>
-                    </div>
-                    
-                    <div class="content">
-                        <p>Hi {first_name.title()} {last_name.title()},</p>
-                        
-                        <p>Your registration for the Alldays event has been successfully confirmed! Here are your registration details:</p>
-                        
-                        <div class="booking-id">
-                            Booking ID: {booking_id}
-                        </div>
-                        
-                        <div class="details">
-                            <div class="detail-row">
-                                <span class="detail-label">Name:</span>
-                                <span>{first_name.title()} {last_name.title()}</span>
-                            </div>
-                            <div class="detail-row">
-                                <span class="detail-label">Email:</span>
-                                <span>{recipient_email}</span>
-                            </div>
-                            <div class="detail-row">
-                                <span class="detail-label">Selected Sports:</span>
-                                <span>{sports_display}</span>
-                            </div>
-                            <div class="detail-row">
-                                <span class="detail-label">Event Date:</span>
-                                <span>{event_date}</span>
-                            </div>
-                            <div class="detail-row">
-                                <span class="detail-label">Event Location:</span>
-                                <span>{event_location}</span>
-                            </div>
-                            {f'<div class="detail-row"><span class="detail-label">Orangetheory Batch:</span><span>{orangetheory_batch.title()}</span></div>' if orangetheory_batch else ''}
-                        </div>
-                        
-                        <h3>What's Next?</h3>
-                        <ul>
-                            <li>Please arrive 15 minutes before your scheduled time</li>
-                            <li>Bring comfortable workout clothes and shoes</li>
-                            <li>Don't forget to bring your booking ID</li>
-                            <li>Payment can be made on-site</li>
-                        </ul>
-                        
-                        <h3>Important Notes:</h3>
-                        <ul>
-                            <li>This booking ID is unique to your registration</li>
-                            <li>Please keep this email for your records</li>
-                            <li>For any queries, contact us at support@alldays.club</li>
-                        </ul>
-                        
-                        <p>We're excited to see you at the event!</p>
-                        
-                        <p>Best regards,<br>
-                        Team Alldays</p>
-                    </div>
-                    
-                    <div class="footer">
-                        <p>This is an automated email. Please do not reply to this address.</p>
-                        <p>© 2024 Alldays. All rights reserved.</p>
-                    </div>
-                </div>
-            </body>
-            </html>
-            """
+            # Prepare template variables
+            template_vars = {
+                'FIRST_NAME': first_name.title(),
+                'LAST_NAME': last_name.title(),
+                'EMAIL': recipient_email,
+                'BOOKING_ID': booking_id,
+                'SELECTED_SPORTS': sports_display,
+                'EVENT_DATE': event_date,
+                'EVENT_LOCATION': event_location,
+                'ORANGETHEORY_BATCH_ROW': f'<div class="detail-row"><span class="detail-label">Orangetheory Batch:</span><span>{orangetheory_batch.title()}</span></div>' if orangetheory_batch else ''
+            }
+            
+            # Create HTML email content using template
+            html_content = template_loader.fill_template('event_registration', template_vars)
             
             # Create plain text version
             text_content = f"""
@@ -242,98 +169,21 @@ This is an automated email. Please do not reply to this address.
             # Format sports for display
             sports_display = ", ".join([sport.title() for sport in sports_list])
             
-            # Create HTML email content
-            html_content = f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="utf-8">
-                <title>Jindal Registration Confirmation</title>
-                <style>
-                    body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-                    .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                    .header {{ background: linear-gradient(135deg, #6b58cd 0%, #e7ff00 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
-                    .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }}
-                    .student-id {{ background: #e7ff00; color: #333; padding: 10px; border-radius: 5px; font-weight: bold; text-align: center; margin: 20px 0; }}
-                    .details {{ background: white; padding: 20px; border-radius: 5px; margin: 20px 0; }}
-                    .detail-row {{ display: flex; justify-content: space-between; margin: 10px 0; padding: 5px 0; border-bottom: 1px solid #eee; }}
-                    .detail-label {{ font-weight: bold; color: #6b58cd; }}
-                    .footer {{ text-align: center; margin-top: 30px; color: #666; font-size: 14px; }}
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    <div class="header">
-                        <h1>🎉 Jindal Registration Confirmed!</h1>
-                        <p>Welcome to Alldays x Jindal Event</p>
-                    </div>
-                    
-                    <div class="content">
-                        <p>Hi {first_name.title()} {last_name.title()},</p>
-                        
-                        <p>Your registration for the Alldays x Jindal event has been successfully confirmed! Here are your registration details:</p>
-                        
-                        <div class="student-id">
-                            JGU Student ID: {jgu_student_id}
-                        </div>
-                        
-                        <div class="details">
-                            <div class="detail-row">
-                                <span class="detail-label">Name:</span>
-                                <span>{first_name.title()} {last_name.title()}</span>
-                            </div>
-                            <div class="detail-row">
-                                <span class="detail-label">Email:</span>
-                                <span>{recipient_email}</span>
-                            </div>
-                            <div class="detail-row">
-                                <span class="detail-label">JGU Student ID:</span>
-                                <span>{jgu_student_id}</span>
-                            </div>
-                            <div class="detail-row">
-                                <span class="detail-label">Location:</span>
-                                <span>{city.title()}, {state.title()}</span>
-                            </div>
-                            <div class="detail-row">
-                                <span class="detail-label">Selected Sports:</span>
-                                <span>{sports_display}</span>
-                            </div>
-                            {f'<div class="detail-row"><span class="detail-label">Pickleball Level:</span><span>{pickle_level.title()}</span></div>' if pickle_level else ''}
-                            <div class="detail-row">
-                                <span class="detail-label">Total Amount:</span>
-                                <span>₹{total_amount}</span>
-                            </div>
-                        </div>
-                        
-                        <h3>What's Next?</h3>
-                        <ul>
-                            <li>Please arrive 15 minutes before your scheduled time</li>
-                            <li>Bring comfortable workout clothes and shoes</li>
-                            <li>Don't forget to bring your JGU Student ID</li>
-                            <li>Payment proof has been uploaded successfully</li>
-                        </ul>
-                        
-                        <h3>Important Notes:</h3>
-                        <ul>
-                            <li>This registration is linked to your JGU Student ID</li>
-                            <li>Please keep this email for your records</li>
-                            <li>For any queries, contact us at support@alldays.club</li>
-                        </ul>
-                        
-                        <p>We're excited to see you at the event!</p>
-                        
-                        <p>Best regards,<br>
-                        Team Alldays</p>
-                    </div>
-                    
-                    <div class="footer">
-                        <p>This is an automated email. Please do not reply to this address.</p>
-                        <p>© 2024 Alldays. All rights reserved.</p>
-                    </div>
-                </div>
-            </body>
-            </html>
-            """
+            # Prepare template variables
+            template_vars = {
+                'FIRST_NAME': first_name.title(),
+                'LAST_NAME': last_name.title(),
+                'EMAIL': recipient_email,
+                'JGU_STUDENT_ID': jgu_student_id,
+                'CITY': city.title(),
+                'STATE': state.title(),
+                'SELECTED_SPORTS': sports_display,
+                'TOTAL_AMOUNT': total_amount,
+                'PICKLEBALL_LEVEL_ROW': f'<div class="detail-row"><span class="detail-label">Pickleball Level:</span><span>{pickle_level.title()}</span></div>' if pickle_level else ''
+            }
+            
+            # Create HTML email content using template
+            html_content = template_loader.fill_template('jindal_registration', template_vars)
             
             # Create plain text version
             text_content = f"""
