@@ -4,6 +4,7 @@ from .transaction_model import TransactionModel
 from .user_registration_model import UserRegistrationModel
 from .sports_model import SportsModel
 from .jindal_registration_model import JindalRegistrationModel
+from .orangetheory_registration_model import OrangetheoryRegistrationModel
 from db.database import Base
 
 __all__ = [
@@ -13,5 +14,6 @@ __all__ = [
     "UserRegistrationModel",
     "SportsModel",
     "JindalRegistrationModel",
+    "OrangetheoryRegistrationModel",
     "Base"
 ] 

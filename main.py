@@ -22,6 +22,7 @@ from models.event_registration_model import EventRegistrationModel
 from models.user_registration_model import UserRegistrationModel
 from models.sports_model import SportsModel
 from models.jindal_registration_model import JindalRegistrationModel
+from models.orangetheory_registration_model import OrangetheoryRegistrationModel
 
 # Schema imports
 from schemas.event_registration_schema import EventRegistrationSchema
@@ -33,9 +34,10 @@ from schemas.sports_schema import (
     TicketPurchaseRequest, TicketPurchaseResponse
 )
 from schemas.jindal_registration_schema import JindalRegistrationCreate, JindalRegistrationResponse, JindalRegistrationUpdate, JindalRegistrationListResponse
+from schemas.orangetheory_registration_schema import OrangetheoryRegistrationSchema, OrangetheoryRegistrationResponse, OrangetheoryRegistrationListResponse
 
 # Connector imports
-from connector.connector import event_registration_connector, transaction_connector, user_registration_connector, sports_connector
+from connector.connector import event_registration_connector, transaction_connector, user_registration_connector, sports_connector, orangetheory_registration_connector
 from connector.sports_connector import sports_connector as sports_connector_instance
 from connector.jindal_registration_connector import jindal_registration_connector
 
@@ -1012,6 +1014,302 @@ def get_jindal_registrations_summary(
         raise HTTPException(
             status_code=500,
             detail="Failed to fetch registrations summary. Please try again later."
+        )
+
+# ============================================================================
+# ORANGETHEORY REGISTRATION ENDPOINTS
+# ============================================================================
+
+@app.post('/orangetheory-registration', response_model=OrangetheoryRegistrationResponse)
+def create_orangetheory_registration(
+    request: Request,
+    first_name: str = Form(...),
+    last_name: str = Form(...),
+    email: str = Form(...),
+    phone: str = Form(...),
+    selected_sports: str = Form(...),
+    orangetheory_batch: str = Form(None),
+    event_date: str = Form("24th August 2025"),
+    event_location: str = Form("Orangetheory Fitness, Worli"),
+    file: UploadFile = File(None),
+    db: Session = Depends(get_db),
+):
+    """
+    Create Orangetheory registration with file upload
+    """
+    check_rate_limit(request)
+    try:
+        # Validate phone number
+        phone_digits = ''.join(filter(str.isdigit, phone))
+        if len(phone_digits) < 10:
+            raise HTTPException(
+                status_code=422,
+                detail="Invalid phone number. Must be at least 10 digits."
+            )
+        
+        # Validate email format
+        if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
+            raise HTTPException(
+                status_code=422,
+                detail="Invalid email format."
+            )
+        
+        # Check if registration already exists
+        existing_registration = db.query(OrangetheoryRegistrationModel).filter_by(email=email.lower()).first()
+        if existing_registration:
+            raise HTTPException(
+                status_code=409,
+                detail="Registration already exists with this email."
+            )
+        
+        file_url = None
+        if file:
+            try:
+                s3 = boto3.client(
+                    's3',
+                    aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
+                    aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY')
+                )
+                bucket_name = os.environ.get('S3_BUCKET_NAME', 'alldayspayments')
+                file_ext = file.filename.split('.')[-1]
+                s3_key = f"orangetheory_files/{email}_{first_name}_{last_name}.{file_ext}"
+                s3.upload_fileobj(file.file, bucket_name, s3_key)
+                file_url = f"https://{bucket_name}.s3.amazonaws.com/{s3_key}"
+                logger.info(f"File uploaded to S3: {file_url}")
+            except NoCredentialsError:
+                logger.error("AWS credentials not found.")
+                return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": "AWS credentials not found. Please contact support."})
+            except Exception as s3e:
+                logger.error(f"S3 upload failed: {s3e}", exc_info=True)
+                return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": "File upload failed. Please try again later or contact support."})
+        
+        # Generate unique 8-character alphanumeric booking_id
+        def generate_booking_id():
+            return ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+        booking_id = generate_booking_id()
+        # Ensure uniqueness
+        attempts = 0
+        while db.query(OrangetheoryRegistrationModel).filter_by(booking_id=booking_id).first():
+            booking_id = generate_booking_id()
+            attempts += 1
+            if attempts > 5:
+                logger.error("Failed to generate unique booking ID after 5 attempts.")
+                return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": "Could not generate a unique booking ID. Please try again."})
+        
+        try:
+            reg_obj = orangetheory_registration_connector.create(db, {
+                'first_name': first_name.lower(),
+                'last_name': last_name.lower(),
+                'email': email.lower(),
+                'phone': phone.lower(),
+                'selected_sports': selected_sports.lower(),
+                'orangetheory_batch': orangetheory_batch.lower() if orangetheory_batch else None,
+                'event_date': event_date,
+                'event_location': event_location,
+                'payment_status': 'pending',
+                'file_url': file_url,
+                'booking_id': booking_id,
+                'is_active': True
+            })
+        except Exception as dbe:
+            logger.error(f"Database error during registration: {dbe}", exc_info=True)
+            return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": "Registration failed due to a server error. Please try again later."})
+        
+        logger.info(f"Orangetheory registration created: id={reg_obj.id}, booking_id={booking_id}, email={email}")
+        
+        return {
+            "id": reg_obj.id, 
+            "first_name": reg_obj.first_name,
+            "last_name": reg_obj.last_name,
+            "email": reg_obj.email,
+            "phone": reg_obj.phone,
+            "selected_sports": reg_obj.selected_sports,
+            "orangetheory_batch": reg_obj.orangetheory_batch,
+            "event_date": reg_obj.event_date,
+            "event_location": reg_obj.event_location,
+            "payment_status": reg_obj.payment_status,
+            "file_url": reg_obj.file_url,
+            "booking_id": reg_obj.booking_id,
+            "is_active": reg_obj.is_active,
+            "created_at": reg_obj.created_at,
+            "updated_at": reg_obj.updated_at,
+            "message": "Registration successful", 
+            "file_url": file_url
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in Orangetheory registration: {e}", exc_info=True)
+        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": "An unexpected error occurred. Please try again later or contact support."})
+
+@app.post('/orangetheory-registration-with-email', response_model=OrangetheoryRegistrationResponse)
+def create_orangetheory_registration_with_email(
+    request: Request,
+    first_name: str = Form(...),
+    last_name: str = Form(...),
+    email: str = Form(...),
+    phone: str = Form(...),
+    selected_sports: str = Form(...),
+    orangetheory_batch: str = Form(None),
+    event_date: str = Form("24th August 2025"),
+    event_location: str = Form("Orangetheory Fitness, Worli"),
+    file: UploadFile = File(None),
+    db: Session = Depends(get_db),
+):
+    """
+    Create Orangetheory registration with email confirmation
+    """
+    check_rate_limit(request)
+    try:
+        # Validate phone number
+        phone_digits = ''.join(filter(str.isdigit, phone))
+        if len(phone_digits) < 10:
+            raise HTTPException(
+                status_code=422,
+                detail="Invalid phone number. Must be at least 10 digits."
+            )
+        
+        # Validate email format
+        if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
+            raise HTTPException(
+                status_code=422,
+                detail="Invalid email format."
+            )
+        
+        # Check if registration already exists
+        existing_registration = db.query(OrangetheoryRegistrationModel).filter_by(email=email.lower()).first()
+        if existing_registration:
+            raise HTTPException(
+                status_code=409,
+                detail="Registration already exists with this email."
+            )
+        
+        file_url = None
+        if file:
+            try:
+                s3 = boto3.client(
+                    's3',
+                    aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
+                    aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY')
+                )
+                bucket_name = os.environ.get('S3_BUCKET_NAME', 'alldayspayments')
+                file_ext = file.filename.split('.')[-1]
+                s3_key = f"orangetheory_files/{email}_{first_name}_{last_name}.{file_ext}"
+                s3.upload_fileobj(file.file, bucket_name, s3_key)
+                file_url = f"https://{bucket_name}.s3.amazonaws.com/{s3_key}"
+                logger.info(f"File uploaded to S3: {file_url}")
+            except NoCredentialsError:
+                logger.error("AWS credentials not found.")
+                return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": "AWS credentials not found. Please contact support."})
+            except Exception as s3e:
+                logger.error(f"S3 upload failed: {s3e}", exc_info=True)
+                return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": "File upload failed. Please try again later or contact support."})
+        
+        # Generate unique 8-character alphanumeric booking_id
+        def generate_booking_id():
+            return ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+        booking_id = generate_booking_id()
+        # Ensure uniqueness
+        attempts = 0
+        while db.query(OrangetheoryRegistrationModel).filter_by(booking_id=booking_id).first():
+            booking_id = generate_booking_id()
+            attempts += 1
+            if attempts > 5:
+                logger.error("Failed to generate unique booking ID after 5 attempts.")
+                return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": "Could not generate a unique booking ID. Please try again."})
+        
+        try:
+            reg_obj = orangetheory_registration_connector.create(db, {
+                'first_name': first_name.lower(),
+                'last_name': last_name.lower(),
+                'email': email.lower(),
+                'phone': phone.lower(),
+                'selected_sports': selected_sports.lower(),
+                'orangetheory_batch': orangetheory_batch.lower() if orangetheory_batch else None,
+                'event_date': event_date,
+                'event_location': event_location,
+                'payment_status': 'pending',
+                'file_url': file_url,
+                'booking_id': booking_id,
+                'is_active': True
+            })
+        except Exception as dbe:
+            logger.error(f"Database error during registration: {dbe}", exc_info=True)
+            return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": "Registration failed due to a server error. Please try again later."})
+        
+        logger.info(f"Orangetheory registration created: id={reg_obj.id}, booking_id={booking_id}, email={email}")
+        
+        # Send confirmation email
+        email_sent = False
+        try:
+            email_sent = ses_email_service.send_confirmation_email(
+                recipient_email=email,
+                first_name=first_name,
+                last_name=last_name,
+                booking_id=booking_id,
+                selected_sports=selected_sports,
+                event_date=event_date,
+                event_location=event_location,
+                orangetheory_batch=orangetheory_batch
+            )
+            if email_sent:
+                logger.info(f"Confirmation email sent successfully to {email}")
+            else:
+                logger.warning(f"Failed to send confirmation email to {email}")
+        except Exception as email_error:
+            logger.error(f"Error sending confirmation email to {email}: {email_error}", exc_info=True)
+        
+        return {
+            "id": reg_obj.id, 
+            "first_name": reg_obj.first_name,
+            "last_name": reg_obj.last_name,
+            "email": reg_obj.email,
+            "phone": reg_obj.phone,
+            "selected_sports": reg_obj.selected_sports,
+            "orangetheory_batch": reg_obj.orangetheory_batch,
+            "event_date": reg_obj.event_date,
+            "event_location": reg_obj.event_location,
+            "payment_status": reg_obj.payment_status,
+            "file_url": reg_obj.file_url,
+            "booking_id": reg_obj.booking_id,
+            "is_active": reg_obj.is_active,
+            "created_at": reg_obj.created_at,
+            "updated_at": reg_obj.updated_at,
+            "message": "Registration successful", 
+            "file_url": file_url,
+            "email_sent": email_sent
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in Orangetheory registration with email: {e}", exc_info=True)
+        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": "An unexpected error occurred. Please try again later or contact support."})
+
+@app.get('/orangetheory-registrations', response_model=OrangetheoryRegistrationListResponse)
+def get_orangetheory_registrations(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    api_key: str = Depends(get_api_key)
+):
+    """
+    Get all Orangetheory registrations (admin only)
+    """
+    try:
+        registrations = orangetheory_registration_connector.list(db, skip=skip, limit=limit)
+        total = db.query(OrangetheoryRegistrationModel).count()
+        
+        return {
+            "registrations": registrations,
+            "total": total,
+            "skip": skip,
+            "limit": limit
+        }
+    except Exception as e:
+        logger.error(f"Error fetching Orangetheory registrations: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch registrations"
         )
 
 # ============================================================================
